@@ -5,7 +5,10 @@ from google import genai
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.services.embedding_service import create_embedding
-from app.services.memory_service import extract_memories
+from app.services.memory_service import (
+    extract_memories,
+    is_duplicate_memory,
+)
 
 
 router = APIRouter(
@@ -46,15 +49,34 @@ def chat_with_documents(body: ChatRequest):
 
     memories = extract_memories(body.question)
 
+    existing_response = (
+        supabase.table("memories")
+        .select("content, memory_type")
+        .eq("session_id", session_id)
+        .execute()
+    )
+    existing_memories = existing_response.data or []
+
+    saved_memories = []
     for memory in memories:
+        if is_duplicate_memory(
+            memory["content"],
+            existing_memories,
+        ):
+            print(f"Skipping duplicate memory: {memory['content']}")
+            continue
+
         supabase.table("memories").insert({
             "session_id": session_id,
             "memory_type": memory["memory_type"],
             "content": memory["content"],
         }).execute()
 
-    print(f"3. Extracted {len(memories)} memories")
-    for memory in memories:
+        existing_memories.append(memory)
+        saved_memories.append(memory)
+
+    print(f"3. Extracted {len(memories)} memories, saved {len(saved_memories)}")
+    for memory in saved_memories:
         print(f"   [{memory['memory_type']}] {memory['content']}")
 
     history_response = (
@@ -173,6 +195,7 @@ Answer clearly.
         "question": body.question,
         "answer": answer,
         "memories_extracted": memories,
+        "memories_saved": saved_memories,
         "memories_used": stored_memories,
         "sources": sources,
     }

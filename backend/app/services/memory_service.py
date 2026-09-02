@@ -70,3 +70,18 @@ User message:
         })
 
     return cleaned
+
+
+def is_duplicate_memory(
+    new_memory: str,
+    existing_memories: list[dict],
+) -> bool:
+    new_text = new_memory.lower().strip()
+
+    for memory in existing_memories:
+        existing_text = memory["content"].lower().strip()
+
+        if new_text == existing_text:
+            return True
+
+    return False
