@@ -457,7 +457,7 @@
           (selectedDocumentId === doc.id ? " active" : "");
 
         const name = document.createElement("span");
-        name.textContent = `📄 ${doc.title}`;
+        name.textContent = `📄 ${doc.title} · ${doc.status || "unknown"}`;
         name.title = doc.filename || doc.title;
 
         name.addEventListener("click", () => {
@@ -792,6 +792,8 @@
     uploadButton.disabled = true;
     uploadButton.textContent = "Uploading...";
 
+    const poll = setInterval(loadDocuments, 2000);
+
     try {
       const response = await fetch(
         `${API_URL}/documents/upload`,
@@ -821,11 +823,15 @@
 
       uploadButton.textContent = "Upload failed";
 
+      await loadDocuments();
+
       addErrorMessage(
         "Could not upload the document."
       );
 
     } finally {
+      clearInterval(poll);
+
       setTimeout(() => {
         uploadButton.disabled = false;
         uploadButton.textContent = "+ Upload PDF";

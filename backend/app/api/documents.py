@@ -100,6 +100,8 @@ async def upload_document(file: UploadFile = File(...)):
             detail="Only PDF files are allowed",
         )
 
+    document_id = None
+
     try:
         print("1. PDF received")
         print(
@@ -116,7 +118,48 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="Uploaded file is empty",
             )
 
-        print("2. Extracting PDF text (PyMuPDF)")
+        document_id = str(uuid.uuid4())
+        filename = file.filename or f"{document_id}.pdf"
+        storage_path = f"documents/{document_id}/{filename}"
+
+        title = filename
+        if title.lower().endswith(".pdf"):
+            title = title[:-4]
+
+        print("2. Uploading PDF to Supabase Storage")
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=storage_path,
+            file=file_bytes,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "false",
+            },
+        )
+
+        document_data = {
+            "id": document_id,
+            "title": title,
+            "filename": filename,
+            "document_type": "pdf",
+            "status": "processing",
+            "storage_path": storage_path,
+        }
+
+        print("3. Saving document as processing")
+        response = (
+            supabase
+            .table("documents")
+            .insert(document_data)
+            .execute()
+        )
+
+        saved_document = (
+            response.data[0]
+            if response.data
+            else document_data
+        )
+
+        print("4. Extracting PDF text (PyMuPDF)")
         pages = extract_pdf_text(file_bytes)
 
         if not pages:
@@ -137,26 +180,24 @@ async def upload_document(file: UploadFile = File(...)):
             f"text_pages={len(non_empty_pages)}"
         )
 
-        # PyMuPDF text is only a preview — Docling is the real parser.
-        # Don't block upload if pages have no extractable text layer.
         if not non_empty_pages:
             print(
                 "WARNING: no readable text from PyMuPDF; "
                 "continuing with Docling anyway"
             )
 
-        print("3. Starting Docling")
+        print("5. Starting Docling")
         start = time.time()
         docling_result = parse_document(
             file_bytes=file_bytes,
-            filename=file.filename or "document.pdf",
+            filename=filename,
         )
         print(
-            f"4. Docling finished "
+            f"6. Docling finished "
             f"({time.time() - start:.2f}s)"
         )
 
-        print("5. Starting chunking")
+        print("7. Starting chunking")
         chunks = chunk_document(docling_result["document"])
         print(f"   chunks_created={len(chunks)}")
 
@@ -166,47 +207,6 @@ async def upload_document(file: UploadFile = File(...)):
                 f"PAGES {chunk['page_start']}-{chunk['page_end']}\n"
                 f"{chunk['text'][:300]}\n"
             )
-
-        document_id = str(uuid.uuid4())
-        filename = file.filename or f"{document_id}.pdf"
-        storage_path = f"documents/{document_id}/{filename}"
-
-        title = filename
-        if title.lower().endswith(".pdf"):
-            title = title[:-4]
-
-        print("6. Uploading PDF to Supabase Storage")
-        supabase.storage.from_(BUCKET_NAME).upload(
-            path=storage_path,
-            file=file_bytes,
-            file_options={
-                "content-type": "application/pdf",
-                "upsert": "false",
-            },
-        )
-
-        document_data = {
-            "id": document_id,
-            "title": title,
-            "filename": filename,
-            "document_type": "pdf",
-            "status": "uploaded",
-            "storage_path": storage_path,
-        }
-
-        print("7. Saving document metadata")
-        response = (
-            supabase
-            .table("documents")
-            .insert(document_data)
-            .execute()
-        )
-
-        saved_document = (
-            response.data[0]
-            if response.data
-            else document_data
-        )
 
         print("8. Creating embeddings + saving chunks")
         chunk_rows = []
@@ -229,17 +229,30 @@ async def upload_document(file: UploadFile = File(...)):
             })
 
         if chunk_rows:
-            try:
-                supabase.table("document_chunks").insert(
-                    chunk_rows
-                ).execute()
-            except Exception as e:
-                print(f"ERROR saving chunks: {e}")
-                raise
+            supabase.table("document_chunks").insert(
+                chunk_rows
+            ).execute()
 
         print(f"Saved {len(chunk_rows)} chunks + embeddings")
-        print("9. UPLOAD COMPLETE")
 
+        print("9. Marking document ready")
+        ready_response = (
+            supabase
+            .table("documents")
+            .update({"status": "ready"})
+            .eq("id", document_id)
+            .execute()
+        )
+
+        if ready_response.data:
+            saved_document = ready_response.data[0]
+        else:
+            saved_document = {
+                **saved_document,
+                "status": "ready",
+            }
+
+        print("10. UPLOAD COMPLETE")
         return {
             "message": "Document uploaded and chunks saved",
             "document": saved_document,
@@ -252,11 +265,27 @@ async def upload_document(file: UploadFile = File(...)):
             "chunks_saved": len(chunk_rows),
         }
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        if document_id:
+            try:
+                supabase.table("documents").update({
+                    "status": "failed"
+                }).eq("id", document_id).execute()
+            except Exception:
+                pass
+        raise e
 
     except Exception as e:
         print(f"UPLOAD FAILED: {e}")
+
+        if document_id:
+            try:
+                supabase.table("documents").update({
+                    "status": "failed"
+                }).eq("id", document_id).execute()
+            except Exception:
+                pass
+
         raise HTTPException(
             status_code=500,
             detail=f"Document upload failed: {str(e)}",
