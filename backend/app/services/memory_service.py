@@ -1,13 +1,6 @@
 import json
 
-from google import genai
-
-from app.core.config import settings
-
-
-client = genai.Client(
-    api_key=settings.GEMINI_API_KEY
-)
+from app.services.llm_service import generate_text
 
 
 def extract_memories(user_message: str):
@@ -38,17 +31,12 @@ User message:
 {user_message}
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-
-    text = response.text.strip()
-    text = text.replace("```json", "").replace("```", "").strip()
-
     try:
+        text = generate_text(prompt)
+        text = text.replace("```json", "").replace("```", "").strip()
         memories = json.loads(text)
-    except Exception:
+    except Exception as e:
+        print(f"Memory extraction skipped: {e}")
         return []
 
     if not isinstance(memories, list):

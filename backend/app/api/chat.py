@@ -1,10 +1,9 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from google import genai
 
-from app.core.config import settings
 from app.core.supabase import supabase
 from app.services.embedding_service import create_embedding
+from app.services.llm_service import generate_text
 from app.services.memory_service import (
     extract_memories,
     is_duplicate_memory,
@@ -13,10 +12,6 @@ from app.services.memory_service import (
 
 router = APIRouter(
     tags=["chat"],
-)
-
-client = genai.Client(
-    api_key=settings.GEMINI_API_KEY
 )
 
 
@@ -192,12 +187,8 @@ Do not mention chunk numbers.
 Answer clearly.
 """
 
-    print("8. Generating answer with Gemini")
-    result = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    answer = result.text
+    print("8. Generating answer with Groq")
+    answer = generate_text(prompt)
 
     supabase.table("chat_messages").insert({
         "session_id": session_id,
