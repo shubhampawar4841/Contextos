@@ -1,9 +1,11 @@
+import time
 import uuid
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.supabase import supabase
 from app.services.pdf_parser import extract_pdf_text
+from app.services.document_parser import parse_document
 
 
 router = APIRouter(
@@ -16,7 +18,6 @@ BUCKET_NAME = "Rag storage"
 
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
-    # 1. Validate file type
     if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=400,
@@ -24,7 +25,7 @@ async def upload_document(file: UploadFile = File(...)):
         )
 
     try:
-        # 2. Read uploaded PDF bytes
+        print("1. PDF received")
         file_bytes = await file.read()
 
         if not file_bytes:
@@ -33,7 +34,7 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="Uploaded file is empty",
             )
 
-        # 3. Extract PDF text
+        print("2. Extracting PDF text (PyMuPDF)")
         pages = extract_pdf_text(file_bytes)
 
         if not pages:
@@ -42,7 +43,6 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="Could not extract pages from PDF",
             )
 
-        # 4. Find non-empty text pages
         non_empty_pages = [
             page
             for page in pages
@@ -54,21 +54,33 @@ async def upload_document(file: UploadFile = File(...)):
                 status_code=400,
                 detail=(
                     "PDF pages were detected, but no readable text "
-                    "could be extracted. The PDF may be scanned/image-based."
+                    "could be extracted."
                 ),
             )
 
-        # 5. Generate unique document ID
-        document_id = str(uuid.uuid4())
-
-        # 6. Build safe storage path
-        filename = file.filename or f"{document_id}.pdf"
-
-        storage_path = (
-            f"documents/{document_id}/{filename}"
+        print(
+            f"   pages={len(pages)}, "
+            f"text_pages={len(non_empty_pages)}"
         )
 
-        # 7. Upload original PDF to Supabase Storage
+        print("3. Starting Docling")
+        start = time.time()
+        docling_result = parse_document(
+            file_bytes=file_bytes,
+            filename=file.filename or "document.pdf",
+        )
+        print(
+            f"4. Docling finished "
+            f"({time.time() - start:.2f}s)"
+        )
+
+        docling_markdown = docling_result["markdown"]
+
+        document_id = str(uuid.uuid4())
+        filename = file.filename or f"{document_id}.pdf"
+        storage_path = f"documents/{document_id}/{filename}"
+
+        print("5. Uploading PDF to Supabase Storage")
         supabase.storage.from_(BUCKET_NAME).upload(
             path=storage_path,
             file=file_bytes,
@@ -78,9 +90,7 @@ async def upload_document(file: UploadFile = File(...)):
             },
         )
 
-        # 8. Prepare document metadata
         title = filename
-
         if title.lower().endswith(".pdf"):
             title = title[:-4]
 
@@ -93,7 +103,7 @@ async def upload_document(file: UploadFile = File(...)):
             "storage_path": storage_path,
         }
 
-        # 9. Insert metadata into documents table
+        print("6. Saving document metadata")
         response = (
             supabase
             .table("documents")
@@ -107,20 +117,20 @@ async def upload_document(file: UploadFile = File(...)):
             else document_data
         )
 
-        # 10. Return useful PDF information
+        print("7. UPLOAD COMPLETE")
         return {
             "message": "Document uploaded successfully",
             "document": saved_document,
             "pdf_info": {
                 "total_pages": len(pages),
                 "text_pages": len(non_empty_pages),
-                "empty_pages": (
-                    len(pages) - len(non_empty_pages)
-                ),
-                "first_text_page": (
-                    non_empty_pages[0]["page_number"]
-                ),
+                "empty_pages": len(pages) - len(non_empty_pages),
+                "first_text_page": non_empty_pages[0]["page_number"],
                 "preview": non_empty_pages[:3],
+            },
+            "docling_info": {
+                "markdown_length": len(docling_markdown),
+                "markdown_preview": docling_markdown[:5000],
             },
         }
 

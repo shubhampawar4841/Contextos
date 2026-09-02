@@ -1,8 +1,8 @@
-import fitz
+import pymupdf
 
 
 def extract_pdf_text(file_bytes: bytes):
-    document = fitz.open(
+    document = pymupdf.open(
         stream=file_bytes,
         filetype="pdf",
     )
