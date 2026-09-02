@@ -160,7 +160,12 @@ def chat_with_documents(body: ChatRequest):
     ).execute()
 
     chunks = response.data or []
-    print(f"7. Retrieved chunks={len(chunks)}")
+    chunks = [
+        chunk
+        for chunk in chunks
+        if float(chunk["similarity"]) >= 0.60
+    ]
+    print(f"7. Relevant document chunks={len(chunks)}")
 
     context = "\n\n".join(
         [
