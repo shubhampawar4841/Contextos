@@ -63,13 +63,37 @@ def chat_with_documents(body: ChatRequest):
             memory["content"],
             existing_memories,
         ):
-            print(f"Skipping duplicate memory: {memory['content']}")
+            print(f"Skipping exact duplicate: {memory['content']}")
+            continue
+
+        memory_embedding = create_embedding(memory["content"])
+
+        similar = supabase.rpc(
+            "match_memories",
+            {
+                "query_embedding": memory_embedding,
+                "match_count": 3,
+            },
+        ).execute()
+
+        matches = similar.data or []
+        is_semantic_duplicate = any(
+            float(match["similarity"]) >= 0.90
+            for match in matches
+        )
+
+        if is_semantic_duplicate:
+            print(
+                f"Skipping semantic duplicate: "
+                f"{memory['content']}"
+            )
             continue
 
         supabase.table("memories").insert({
             "session_id": session_id,
             "memory_type": memory["memory_type"],
             "content": memory["content"],
+            "embedding": memory_embedding,
         }).execute()
 
         existing_memories.append(memory)
@@ -95,24 +119,29 @@ def chat_with_documents(body: ChatRequest):
     )
     print(f"4. History messages={len(history)}")
 
-    memory_response = (
-        supabase.table("memories")
-        .select("memory_type, content")
-        .eq("session_id", session_id)
-        .order("created_at", desc=True)
-        .limit(20)
-        .execute()
-    )
+    query_embedding = create_embedding(body.question)
+    print(f"5. Query embedding dimensions={len(query_embedding)}")
+
+    memory_response = supabase.rpc(
+        "match_memories",
+        {
+            "query_embedding": query_embedding,
+            "match_count": 5,
+        },
+    ).execute()
 
     stored_memories = memory_response.data or []
     memory_text = "\n".join(
         f"- {memory['content']}"
         for memory in stored_memories
     )
-    print(f"5. Loaded {len(stored_memories)} stored memories")
-
-    query_embedding = create_embedding(body.question)
-    print(f"6. Query embedding dimensions={len(query_embedding)}")
+    print(f"6. Relevant memories={len(stored_memories)}")
+    for memory in stored_memories:
+        print(
+            f"   [{memory.get('memory_type')}] "
+            f"sim={float(memory['similarity']):.4f} "
+            f"{memory['content']}"
+        )
 
     response = supabase.rpc(
         "match_document_chunks",
