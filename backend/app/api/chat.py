@@ -8,6 +8,12 @@ from app.services.memory_service import (
     extract_memories,
     is_duplicate_memory,
 )
+from app.services.entity_service import (
+    extract_entities_and_relationships,
+)
+from app.services.entity_service import (
+    extract_entities_and_relationships,
+)
 
 
 router = APIRouter(
@@ -42,6 +48,11 @@ def chat_with_documents(body: ChatRequest):
         "role": "user",
         "content": body.question,
     }).execute()
+
+    knowledge = extract_entities_and_relationships(
+        body.question
+    )
+    print("KNOWLEDGE:", knowledge)
 
     memories = extract_memories(body.question)
 
