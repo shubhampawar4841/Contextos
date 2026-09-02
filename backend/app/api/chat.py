@@ -201,6 +201,8 @@ Answer clearly.
             "document": chunk.get("document_title"),
             "document_id": chunk["document_id"],
             "chunk_index": chunk["chunk_index"],
+            "page_start": chunk.get("page_start"),
+            "page_end": chunk.get("page_end"),
             "similarity": round(float(chunk["similarity"]), 4),
             "preview": (
                 chunk["content"][:180] + "..."

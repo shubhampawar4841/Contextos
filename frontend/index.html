@@ -548,8 +548,21 @@
         const sourceName = document.createElement("div");
         sourceName.className = "source-name";
 
+        let pageText = "";
+
+        if (source.page_start) {
+          if (
+            source.page_end &&
+            source.page_end !== source.page_start
+          ) {
+            pageText = ` · Pages ${source.page_start}-${source.page_end}`;
+          } else {
+            pageText = ` · Page ${source.page_start}`;
+          }
+        }
+
         sourceName.textContent =
-          `📄 ${source.document} · ${Math.round(source.similarity * 100)}% match`;
+          `📄 ${source.document}${pageText} · ${Math.round(source.similarity * 100)}% match`;
 
 
         const preview = document.createElement("div");
