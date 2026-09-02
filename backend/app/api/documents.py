@@ -18,6 +18,32 @@ router = APIRouter(
 BUCKET_NAME = "Rag storage"
 
 
+@router.get("")
+def list_documents():
+    try:
+        response = (
+            supabase
+            .table("documents")
+            .select(
+                "id, title, filename, document_type, status, created_at"
+            )
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+        return {
+            "documents": response.data or []
+        }
+
+    except Exception as e:
+        print(f"LIST DOCUMENTS FAILED: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not load documents: {str(e)}",
+        )
+
+
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
     if file.content_type != "application/pdf":

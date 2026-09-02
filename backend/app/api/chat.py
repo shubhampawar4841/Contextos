@@ -23,6 +23,7 @@ client = genai.Client(
 class ChatRequest(BaseModel):
     question: str
     session_id: str | None = None
+    document_id: str | None = None
     limit: int = 5
 
 
@@ -148,6 +149,7 @@ def chat_with_documents(body: ChatRequest):
         {
             "query_embedding": query_embedding,
             "match_count": body.limit,
+            "filter_document_id": body.document_id,
         },
     ).execute()
 
