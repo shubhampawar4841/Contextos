@@ -9,10 +9,10 @@ from app.services.memory_service import (
     is_duplicate_memory,
 )
 from app.services.entity_service import (
+    DEFAULT_USER_ID,
     extract_entities_and_relationships,
-)
-from app.services.entity_service import (
-    extract_entities_and_relationships,
+    get_user_graph_context,
+    save_knowledge,
 )
 
 
@@ -53,6 +53,16 @@ def chat_with_documents(body: ChatRequest):
         body.question
     )
     print("KNOWLEDGE:", knowledge)
+
+    save_result = save_knowledge(
+        supabase=supabase,
+        knowledge=knowledge,
+        user_id=DEFAULT_USER_ID,
+    )
+    print(
+        f"Graph saved: entities={save_result['entities_saved']}, "
+        f"relationships={save_result['relationships_saved']}"
+    )
 
     memories = extract_memories(body.question)
 
@@ -174,14 +184,32 @@ def chat_with_documents(body: ChatRequest):
         ]
     )
 
+    graph_rows = get_user_graph_context(
+        supabase=supabase,
+        user_id=DEFAULT_USER_ID,
+    )
+
+    graph_text = "\n".join(
+        f"- {row['source']['name']} "
+        f"{row['relationship']} "
+        f"{row['target']['name']}"
+        for row in graph_rows
+        if row.get("source") and row.get("target")
+    )
+    print(f"Graph relationships={len(graph_rows)}")
+
     prompt = f"""
 You are answering the user using:
 1. relevant uploaded-document context
 2. conversation history
 3. long-term memories about the user
+4. known entity relationships from the knowledge graph
 
 Long-term memories:
 {memory_text}
+
+Known relationships about the user and their context:
+{graph_text}
 
 Conversation history:
 {history_text}
@@ -194,8 +222,12 @@ Current question:
 
 Instructions:
 - Use memories to personalize how you answer.
+- Use graph relationships when they are relevant.
+- Do not invent relationships that are not present.
+- Use document context only when relevant chunks are provided.
 - Use document context as the source of truth for document-related facts.
 - If the user prefers a certain response style, follow it.
+- If the user is simply sharing information, respond naturally using memory/graph context.
 - If the answer is not supported by the documents when documents are required, say:
   "I don't have enough information in the uploaded documents."
 
@@ -237,5 +269,7 @@ Answer clearly.
         "memories_extracted": memories,
         "memories_saved": saved_memories,
         "memories_used": stored_memories,
+        "knowledge": knowledge,
+        "graph_relationships": len(graph_rows),
         "sources": sources,
     }
