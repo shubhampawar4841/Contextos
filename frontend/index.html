@@ -266,6 +266,40 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
+
+    #newChatButton {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
+    #newChatButton:hover {
+      background: #f3f3f3;
+    }
+
+    .chat-item {
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-item:hover {
+      background: #f3f3f3;
+    }
+
+    .chat-item.active {
+      background: #111;
+      color: white;
+    }
   </style>
 </head>
 
@@ -294,7 +328,14 @@
   <div class="main-layout">
 
     <aside class="sidebar">
-      <div class="sidebar-title">Documents</div>
+      <button id="newChatButton">
+        + New Chat
+      </button>
+
+      <div class="sidebar-title">Chats</div>
+      <div id="chatList"></div>
+
+      <div class="sidebar-title" style="margin-top: 24px;">Documents</div>
       <div id="documentList">
         <div class="documents-loading">Loading...</div>
       </div>
@@ -333,9 +374,7 @@
 <script>
   const API_URL = "http://127.0.0.1:8000";
 
-  // Use your existing test session for now.
-  // Later we'll create sessions automatically.
-  let sessionId = "a4362653-9065-4105-b858-822fb287234c";
+  let sessionId = null;
   let selectedDocumentId = null;
 
   const questionInput = document.getElementById("question");
@@ -345,6 +384,8 @@
   const pdfInput = document.getElementById("pdfInput");
   const uploadButton = document.getElementById("uploadButton");
   const documentList = document.getElementById("documentList");
+  const chatList = document.getElementById("chatList");
+  const newChatButton = document.getElementById("newChatButton");
 
 
   async function loadDocuments() {
@@ -604,6 +645,7 @@
 
       if (data.session_id) {
         sessionId = data.session_id;
+        await loadSessions();
       }
 
 
@@ -714,6 +756,119 @@
 
 
   loadDocuments();
+  loadSessions();
+
+
+  async function createNewChat() {
+    try {
+      const response = await fetch(`${API_URL}/sessions`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create session");
+      }
+
+      const session = await response.json();
+
+      sessionId = session.id;
+
+      chatInner.innerHTML = `
+        <div class="welcome" id="welcome">
+          <h1>Your Context, Remembered.</h1>
+          <p>Ask questions across your documents and memories.</p>
+        </div>
+      `;
+
+      await loadSessions();
+
+      questionInput.focus();
+    } catch (error) {
+      console.error(error);
+      addErrorMessage("Could not create a new chat.");
+    }
+  }
+
+
+  async function loadSessions() {
+    try {
+      const response = await fetch(`${API_URL}/sessions`);
+
+      if (!response.ok) {
+        throw new Error("Failed to load sessions");
+      }
+
+      const data = await response.json();
+
+      chatList.innerHTML = "";
+
+      (data.sessions || []).forEach(session => {
+        const item = document.createElement("div");
+
+        item.className =
+          "chat-item" +
+          (sessionId === session.id ? " active" : "");
+
+        item.textContent = session.title || "New Chat";
+
+        item.addEventListener("click", async () => {
+          sessionId = session.id;
+          await loadSessionMessages(session.id);
+          await loadSessions();
+        });
+
+        chatList.appendChild(item);
+      });
+    } catch (error) {
+      console.error(error);
+      chatList.innerHTML =
+        `<div class="documents-loading">Could not load chats</div>`;
+    }
+  }
+
+
+  async function loadSessionMessages(id) {
+    try {
+      const response = await fetch(
+        `${API_URL}/sessions/${id}/messages`
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load messages");
+      }
+
+      const data = await response.json();
+
+      chatInner.innerHTML = "";
+
+      if (!(data.messages || []).length) {
+        chatInner.innerHTML = `
+          <div class="welcome" id="welcome">
+            <h1>Your Context, Remembered.</h1>
+            <p>Ask questions across your documents and memories.</p>
+          </div>
+        `;
+        return;
+      }
+
+      data.messages.forEach(message => {
+        if (message.role === "user") {
+          addUserMessage(message.content);
+        } else {
+          addAssistantMessage(message.content, []);
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      addErrorMessage("Could not load chat messages.");
+    }
+  }
+
+
+  newChatButton.addEventListener(
+    "click",
+    createNewChat
+  );
 
 </script>
 
