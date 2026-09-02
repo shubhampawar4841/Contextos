@@ -7,6 +7,7 @@ from app.core.supabase import supabase
 from app.services.pdf_parser import extract_pdf_text
 from app.services.document_parser import parse_document
 from app.services.chunking_service import chunk_document
+from app.services.embedding_service import create_embedding
 
 
 router = APIRouter(
@@ -132,14 +133,22 @@ async def upload_document(file: UploadFile = File(...)):
             else document_data
         )
 
-        print("8. Saving chunks to document_chunks")
+        print("8. Creating embeddings + saving chunks")
         chunk_rows = []
 
         for chunk in chunks:
+            embedding = create_embedding(chunk["text"])
+
+            print(
+                f"Chunk {chunk['chunk_index']} "
+                f"embedding dimensions={len(embedding)}"
+            )
+
             chunk_rows.append({
                 "document_id": document_id,
                 "chunk_index": chunk["chunk_index"],
                 "content": chunk["text"],
+                "embedding": embedding,
             })
 
         if chunk_rows:
@@ -151,7 +160,7 @@ async def upload_document(file: UploadFile = File(...)):
                 print(f"ERROR saving chunks: {e}")
                 raise
 
-        print(f"Saved {len(chunk_rows)} chunks to Supabase")
+        print(f"Saved {len(chunk_rows)} chunks + embeddings")
         print("9. UPLOAD COMPLETE")
 
         return {
