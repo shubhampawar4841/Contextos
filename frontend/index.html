@@ -69,10 +69,18 @@
     }
 
     .document-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       padding: 10px;
       border-radius: 8px;
       font-size: 14px;
       cursor: pointer;
+    }
+
+    .document-item span {
+      flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -89,6 +97,24 @@
 
     .document-item.active:hover {
       background: #111;
+    }
+
+    .delete-document {
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      cursor: pointer;
+      opacity: 0;
+      color: inherit;
+      line-height: 1;
+    }
+
+    .document-item:hover .delete-document {
+      opacity: 0.6;
+    }
+
+    .delete-document:hover {
+      opacity: 1 !important;
     }
 
     .documents-loading {
@@ -430,13 +456,54 @@
           "document-item" +
           (selectedDocumentId === doc.id ? " active" : "");
 
-        item.textContent = `📄 ${doc.title}`;
-        item.title = doc.filename || doc.title;
+        const name = document.createElement("span");
+        name.textContent = `📄 ${doc.title}`;
+        name.title = doc.filename || doc.title;
 
-        item.addEventListener("click", () => {
+        name.addEventListener("click", () => {
           selectedDocumentId = doc.id;
           loadDocuments();
         });
+
+        const deleteButton = document.createElement("button");
+        deleteButton.textContent = "×";
+        deleteButton.className = "delete-document";
+
+        deleteButton.addEventListener("click", async (event) => {
+          event.stopPropagation();
+
+          const shouldDelete = confirm(
+            `Delete "${doc.title}"?`
+          );
+
+          if (!shouldDelete) return;
+
+          try {
+            const response = await fetch(
+              `${API_URL}/documents/${doc.id}`,
+              {
+                method: "DELETE"
+              }
+            );
+
+            if (!response.ok) {
+              throw new Error("Delete failed");
+            }
+
+            if (selectedDocumentId === doc.id) {
+              selectedDocumentId = null;
+            }
+
+            await loadDocuments();
+
+          } catch (error) {
+            console.error(error);
+            alert("Could not delete document");
+          }
+        });
+
+        item.appendChild(name);
+        item.appendChild(deleteButton);
 
         documentList.appendChild(item);
       });
