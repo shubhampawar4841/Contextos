@@ -5,6 +5,7 @@ from google import genai
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.services.embedding_service import create_embedding
+from app.services.memory_service import extract_memories
 
 
 router = APIRouter(
@@ -43,6 +44,19 @@ def chat_with_documents(body: ChatRequest):
         "content": body.question,
     }).execute()
 
+    memories = extract_memories(body.question)
+
+    for memory in memories:
+        supabase.table("memories").insert({
+            "session_id": session_id,
+            "memory_type": memory["memory_type"],
+            "content": memory["content"],
+        }).execute()
+
+    print(f"3. Extracted {len(memories)} memories")
+    for memory in memories:
+        print(f"   [{memory['memory_type']}] {memory['content']}")
+
     history_response = (
         supabase.table("chat_messages")
         .select("role, content")
@@ -57,10 +71,10 @@ def chat_with_documents(body: ChatRequest):
         f"{msg['role']}: {msg['content']}"
         for msg in history
     )
-    print(f"3. History messages={len(history)}")
+    print(f"4. History messages={len(history)}")
 
     query_embedding = create_embedding(body.question)
-    print(f"4. Query embedding dimensions={len(query_embedding)}")
+    print(f"5. Query embedding dimensions={len(query_embedding)}")
 
     response = supabase.rpc(
         "match_document_chunks",
@@ -71,7 +85,7 @@ def chat_with_documents(body: ChatRequest):
     ).execute()
 
     chunks = response.data or []
-    print(f"5. Retrieved chunks={len(chunks)}")
+    print(f"6. Retrieved chunks={len(chunks)}")
 
     context = "\n\n".join(
         [
@@ -101,7 +115,7 @@ If the answer is not supported by the documents, say:
 Answer clearly and concisely.
 """
 
-    print("6. Generating answer with Gemini")
+    print("7. Generating answer with Gemini")
     result = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -129,10 +143,11 @@ Answer clearly and concisely.
         for chunk in chunks
     ]
 
-    print("7. CHAT COMPLETE")
+    print("8. CHAT COMPLETE")
     return {
         "session_id": session_id,
         "question": body.question,
         "answer": answer,
+        "memories_extracted": memories,
         "sources": sources,
     }
