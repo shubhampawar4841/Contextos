@@ -114,7 +114,8 @@ async def upload_document(file: UploadFile = File(...)):
 
         for chunk in chunks:
             print(
-                f"\nCHUNK {chunk['chunk_index']}\n"
+                f"\nCHUNK {chunk['chunk_index']} "
+                f"PAGES {chunk['page_start']}-{chunk['page_end']}\n"
                 f"{chunk['text'][:300]}\n"
             )
 
@@ -175,6 +176,8 @@ async def upload_document(file: UploadFile = File(...)):
                 "chunk_index": chunk["chunk_index"],
                 "content": chunk["text"],
                 "embedding": embedding,
+                "page_start": chunk["page_start"],
+                "page_end": chunk["page_end"],
             })
 
         if chunk_rows:
