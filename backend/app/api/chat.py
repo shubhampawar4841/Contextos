@@ -73,8 +73,24 @@ def chat_with_documents(body: ChatRequest):
     )
     print(f"4. History messages={len(history)}")
 
+    memory_response = (
+        supabase.table("memories")
+        .select("memory_type, content")
+        .eq("session_id", session_id)
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+
+    stored_memories = memory_response.data or []
+    memory_text = "\n".join(
+        f"- {memory['content']}"
+        for memory in stored_memories
+    )
+    print(f"5. Loaded {len(stored_memories)} stored memories")
+
     query_embedding = create_embedding(body.question)
-    print(f"5. Query embedding dimensions={len(query_embedding)}")
+    print(f"6. Query embedding dimensions={len(query_embedding)}")
 
     response = supabase.rpc(
         "match_document_chunks",
@@ -85,7 +101,7 @@ def chat_with_documents(body: ChatRequest):
     ).execute()
 
     chunks = response.data or []
-    print(f"6. Retrieved chunks={len(chunks)}")
+    print(f"7. Retrieved chunks={len(chunks)}")
 
     context = "\n\n".join(
         [
@@ -95,9 +111,15 @@ def chat_with_documents(body: ChatRequest):
     )
 
     prompt = f"""
-You are answering questions using the uploaded documents and conversation history.
+You are answering the user using:
+1. relevant uploaded-document context
+2. conversation history
+3. long-term memories about the user
 
-Conversation:
+Long-term memories:
+{memory_text}
+
+Conversation history:
 {history_text}
 
 Document context:
@@ -106,16 +128,18 @@ Document context:
 Current question:
 {body.question}
 
-Use the document context as the source of truth.
-Use conversation history only to understand follow-up questions.
+Instructions:
+- Use memories to personalize how you answer.
+- Use document context as the source of truth for document-related facts.
+- If the user prefers a certain response style, follow it.
+- If the answer is not supported by the documents when documents are required, say:
+  "I don't have enough information in the uploaded documents."
 
-If the answer is not supported by the documents, say:
-"I don't have enough information in the uploaded documents."
-
-Answer clearly and concisely.
+Do not mention chunk numbers.
+Answer clearly.
 """
 
-    print("7. Generating answer with Gemini")
+    print("8. Generating answer with Gemini")
     result = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -143,11 +167,12 @@ Answer clearly and concisely.
         for chunk in chunks
     ]
 
-    print("8. CHAT COMPLETE")
+    print("9. CHAT COMPLETE")
     return {
         "session_id": session_id,
         "question": body.question,
         "answer": answer,
         "memories_extracted": memories,
+        "memories_used": stored_memories,
         "sources": sources,
     }
