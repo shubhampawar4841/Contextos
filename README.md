@@ -50,6 +50,18 @@ Open: http://localhost:5500
 
 Do **not** open `index.html` by double-clicking it — serve it with the command above so it can talk to the API (CORS is set for `http://localhost:5500`).
 
+## Run MCP server
+
+Keep the FastAPI backend running, then in another terminal:
+
+```bash
+cd backend
+source .venv/Scripts/activate   # Windows Git Bash
+mcp dev mcp_server.py
+```
+
+This exposes one tool: `search_context` → `POST /search`.
+
 ## What you can do in the UI
 
 - Upload PDFs
