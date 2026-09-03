@@ -28,7 +28,10 @@ def get_context():
         entities_response = (
             supabase
             .table("entities")
-            .select("id, name, entity_type, created_at")
+            .select(
+                "id, name, entity_type, created_at, "
+                "source_type, source_document_id"
+            )
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .execute()
@@ -41,6 +44,9 @@ def get_context():
                 """
                 id,
                 relationship,
+                source_page,
+                source_document_id,
+                source_type,
                 source:entities!entity_relationships_source_entity_id_fkey(name, entity_type),
                 target:entities!entity_relationships_target_entity_id_fkey(name, entity_type)
                 """

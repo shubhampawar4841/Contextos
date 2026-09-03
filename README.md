@@ -6,7 +6,7 @@ Chat with your PDFs using RAG, long-term memory, and a knowledge graph.
 
 - **FastAPI** — API server
 - **Docling** — PDF parse + chunking
-- **Gemini** — embeddings (`768` dims)
+- **sentence-transformers / all-mpnet-base-v2** — local embeddings (`768` dims, English)
 - **Groq** — chat / memory / entity extraction
 - **Supabase** — storage, documents, chunks, memories, graph
 - **Vanilla HTML + D3** — frontend UI

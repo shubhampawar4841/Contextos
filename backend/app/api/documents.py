@@ -7,7 +7,10 @@ from app.core.supabase import supabase
 from app.services.pdf_parser import extract_pdf_text
 from app.services.document_parser import parse_document
 from app.services.chunking_service import chunk_document
-from app.services.embedding_service import create_embedding
+from app.services.embedding_service import (
+    EMBED_BATCH_SIZE,
+    create_embeddings,
+)
 from app.services.entity_service import (
     DEFAULT_USER_ID,
     extract_entities_and_relationships,
@@ -214,24 +217,32 @@ async def upload_document(file: UploadFile = File(...)):
             )
 
         print("8. Creating embeddings + saving chunks")
+        print(
+            f"   batch_size={EMBED_BATCH_SIZE}, "
+            f"batches={((len(chunks) - 1) // EMBED_BATCH_SIZE) + 1 if chunks else 0}"
+        )
         chunk_rows = []
 
-        for chunk in chunks:
-            embedding = create_embedding(chunk["text"])
+        for start in range(0, len(chunks), EMBED_BATCH_SIZE):
+            batch = chunks[start:start + EMBED_BATCH_SIZE]
+            texts = [chunk["text"] for chunk in batch]
+            embeddings = create_embeddings(texts)
 
             print(
-                f"Chunk {chunk['chunk_index']} "
-                f"embedding dimensions={len(embedding)}"
+                f"   embedded chunks "
+                f"{start}-{start + len(batch) - 1} "
+                f"({len(embeddings)} vectors)"
             )
 
-            chunk_rows.append({
-                "document_id": document_id,
-                "chunk_index": chunk["chunk_index"],
-                "content": chunk["text"],
-                "embedding": embedding,
-                "page_start": chunk["page_start"],
-                "page_end": chunk["page_end"],
-            })
+            for chunk, embedding in zip(batch, embeddings):
+                chunk_rows.append({
+                    "document_id": document_id,
+                    "chunk_index": chunk["chunk_index"],
+                    "content": chunk["text"],
+                    "embedding": embedding,
+                    "page_start": chunk["page_start"],
+                    "page_end": chunk["page_end"],
+                })
 
         if chunk_rows:
             supabase.table("document_chunks").insert(
