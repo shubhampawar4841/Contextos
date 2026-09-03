@@ -8,6 +8,11 @@ from app.services.pdf_parser import extract_pdf_text
 from app.services.document_parser import parse_document
 from app.services.chunking_service import chunk_document
 from app.services.embedding_service import create_embedding
+from app.services.entity_service import (
+    DEFAULT_USER_ID,
+    extract_entities_and_relationships,
+    save_knowledge,
+)
 
 
 router = APIRouter(
@@ -235,7 +240,49 @@ async def upload_document(file: UploadFile = File(...)):
 
         print(f"Saved {len(chunk_rows)} chunks + embeddings")
 
-        print("9. Marking document ready")
+        print("9. Extracting document knowledge")
+        total_entities = 0
+        total_relationships = 0
+
+        for chunk in chunks:
+            text = chunk["text"].strip()
+
+            if len(text) < 100:
+                continue
+
+            try:
+                knowledge = extract_entities_and_relationships(text)
+
+                save_result = save_knowledge(
+                    supabase=supabase,
+                    user_id=DEFAULT_USER_ID,
+                    knowledge=knowledge,
+                    source_type="document",
+                    source_document_id=document_id,
+                    source_page=chunk.get("page_start"),
+                )
+
+                total_entities += save_result["entities_saved"]
+                total_relationships += save_result["relationships_saved"]
+
+                print(
+                    f"   chunk {chunk['chunk_index']} "
+                    f"entities={save_result['entities_saved']} "
+                    f"relationships={save_result['relationships_saved']}"
+                )
+            except Exception as e:
+                print(
+                    f"   chunk {chunk['chunk_index']} "
+                    f"knowledge extraction failed: {e}"
+                )
+
+        print(
+            f"Document knowledge saved: "
+            f"entities={total_entities}, "
+            f"relationships={total_relationships}"
+        )
+
+        print("10. Marking document ready")
         ready_response = (
             supabase
             .table("documents")
@@ -252,7 +299,7 @@ async def upload_document(file: UploadFile = File(...)):
                 "status": "ready",
             }
 
-        print("10. UPLOAD COMPLETE")
+        print("11. UPLOAD COMPLETE")
         return {
             "message": "Document uploaded and chunks saved",
             "document": saved_document,
@@ -263,6 +310,8 @@ async def upload_document(file: UploadFile = File(...)):
             },
             "chunks_created": len(chunks),
             "chunks_saved": len(chunk_rows),
+            "knowledge_entities_saved": total_entities,
+            "knowledge_relationships_saved": total_relationships,
         }
 
     except HTTPException as e:

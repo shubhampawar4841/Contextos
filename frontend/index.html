@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ContextOS</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 
   <style>
     * {
@@ -300,12 +301,133 @@
       background: white;
       border-radius: 8px;
       cursor: pointer;
-      margin-bottom: 20px;
+      margin-bottom: 10px;
       font-weight: 600;
     }
 
     #newChatButton:hover {
       background: #f3f3f3;
+    }
+
+    #contextButton {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
+    #contextButton:hover {
+      background: #f3f3f3;
+    }
+
+    #graphButton {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
+    #graphButton:hover {
+      background: #f3f3f3;
+    }
+
+    #graphPanel {
+      flex: 1;
+      padding: 24px;
+      width: 100%;
+      overflow: auto;
+      background: #f7f7f8;
+    }
+
+    #knowledgeGraph {
+      background: #fafafa;
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+      display: block;
+      max-width: 100%;
+    }
+
+    .graph-label {
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .graph-link-label {
+      font-size: 10px;
+      fill: #777;
+    }
+
+    .graph-details {
+      margin-top: 16px;
+      padding: 16px;
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+    }
+
+    .graph-details h3 {
+      margin-bottom: 10px;
+    }
+
+    .graph-details ul {
+      padding-left: 18px;
+    }
+
+    .graph-details li {
+      margin-bottom: 6px;
+    }
+
+    #contextPanel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 20px 140px;
+      background: #f7f7f8;
+    }
+
+    .context-inner {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 14px;
+      padding: 24px;
+    }
+
+    .context-inner h2 {
+      margin-bottom: 20px;
+      font-size: 24px;
+    }
+
+    .context-inner h3 {
+      margin-top: 22px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+    }
+
+    .context-inner ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .context-inner li {
+      padding: 10px 12px;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: #fafafa;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
     .chat-item {
@@ -358,6 +480,14 @@
         + New Chat
       </button>
 
+      <button id="contextButton">
+        Context
+      </button>
+
+      <button id="graphButton">
+        Knowledge Graph
+      </button>
+
       <div class="sidebar-title">Chats</div>
       <div id="chatList"></div>
 
@@ -377,6 +507,17 @@
 
       </div>
     </main>
+
+    <div id="contextPanel" style="display:none;"></div>
+
+    <div id="graphPanel" style="display:none;">
+      <h2 style="margin-bottom: 16px;">Knowledge Graph</h2>
+      <svg id="knowledgeGraph" width="900" height="520"></svg>
+      <div id="graphDetails" class="graph-details">
+        <h3>Select a node</h3>
+        <p>Click any node to inspect its relationships.</p>
+      </div>
+    </div>
 
   </div>
 
@@ -402,6 +543,7 @@
 
   let sessionId = null;
   let selectedDocumentId = null;
+  let contextMemories = [];
 
   const questionInput = document.getElementById("question");
   const sendButton = document.getElementById("sendButton");
@@ -412,6 +554,10 @@
   const documentList = document.getElementById("documentList");
   const chatList = document.getElementById("chatList");
   const newChatButton = document.getElementById("newChatButton");
+  const contextButton = document.getElementById("contextButton");
+  const contextPanel = document.getElementById("contextPanel");
+  const graphButton = document.getElementById("graphButton");
+  const graphPanel = document.getElementById("graphPanel");
 
 
   async function loadDocuments() {
@@ -514,6 +660,133 @@
       documentList.innerHTML =
         `<div class="documents-loading">Could not load documents</div>`;
     }
+  }
+
+
+  function showChatView() {
+    chat.style.display = "block";
+    contextPanel.style.display = "none";
+    graphPanel.style.display = "none";
+  }
+
+
+  function showContextView() {
+    chat.style.display = "none";
+    contextPanel.style.display = "block";
+    graphPanel.style.display = "none";
+  }
+
+
+  function showGraphView() {
+    chat.style.display = "none";
+    contextPanel.style.display = "none";
+    graphPanel.style.display = "block";
+  }
+
+
+  async function loadContext() {
+    try {
+      showContextView();
+
+      contextPanel.innerHTML = `
+        <div class="context-inner">
+          <h2>Context</h2>
+          <p style="color:#888;">Loading...</p>
+        </div>
+      `;
+
+      const response = await fetch(`${API_URL}/context`);
+
+      if (!response.ok) {
+        throw new Error("Failed to load context");
+      }
+
+      const data = await response.json();
+
+      const memories = data.memories || [];
+      const entities = data.entities || [];
+      const relationships = data.relationships || [];
+      const documents = data.documents || [];
+
+      contextPanel.innerHTML = `
+        <div class="context-inner">
+          <h2>Context</h2>
+
+          <h3>Memories</h3>
+          <ul>
+            ${
+              memories.length
+                ? memories
+                    .map(m => `<li>${escapeHtml(m.content)}</li>`)
+                    .join("")
+                : "<li>No memories yet</li>"
+            }
+          </ul>
+
+          <h3>Entities</h3>
+          <ul>
+            ${
+              entities.length
+                ? entities
+                    .map(
+                      e =>
+                        `<li>${escapeHtml(e.name)} · ${escapeHtml(e.entity_type)}</li>`
+                    )
+                    .join("")
+                : "<li>No entities yet</li>"
+            }
+          </ul>
+
+          <h3>Relationships</h3>
+          <ul>
+            ${
+              relationships.length
+                ? relationships
+                    .map(r => {
+                      const source = r.source?.name || "?";
+                      const target = r.target?.name || "?";
+                      return `<li>${escapeHtml(source)} → ${escapeHtml(r.relationship)} → ${escapeHtml(target)}</li>`;
+                    })
+                    .join("")
+                : "<li>No relationships yet</li>"
+            }
+          </ul>
+
+          <h3>Documents</h3>
+          <ul>
+            ${
+              documents.length
+                ? documents
+                    .map(
+                      d =>
+                        `<li>${escapeHtml(d.title)} · ${escapeHtml(d.status || "unknown")}</li>`
+                    )
+                    .join("")
+                : "<li>No documents yet</li>"
+            }
+          </ul>
+        </div>
+      `;
+    } catch (error) {
+      console.error(error);
+
+      contextPanel.innerHTML = `
+        <div class="context-inner">
+          <h2>Context</h2>
+          <p class="error">Could not load context.</p>
+        </div>
+      `;
+    }
+  }
+
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 
 
@@ -681,7 +954,7 @@
       return;
     }
 
-
+    showChatView();
     removeWelcome();
 
     addUserMessage(question);
@@ -847,6 +1120,8 @@
 
   async function createNewChat() {
     try {
+      showChatView();
+
       const response = await fetch(`${API_URL}/sessions`, {
         method: "POST"
       });
@@ -915,6 +1190,8 @@
 
   async function loadSessionMessages(id) {
     try {
+      showChatView();
+
       const response = await fetch(
         `${API_URL}/sessions/${id}/messages`
       );
@@ -954,6 +1231,303 @@
   newChatButton.addEventListener(
     "click",
     createNewChat
+  );
+
+
+  contextButton.addEventListener(
+    "click",
+    loadContext
+  );
+
+
+  async function loadKnowledgeGraph() {
+    try {
+      showGraphView();
+
+      const details = document.getElementById("graphDetails");
+      if (details) {
+        details.innerHTML = `
+          <h3>Select a node</h3>
+          <p>Click any node to inspect its relationships.</p>
+        `;
+      }
+
+      const response = await fetch(`${API_URL}/context`);
+
+      if (!response.ok) {
+        throw new Error("Failed to load graph context");
+      }
+
+      const data = await response.json();
+
+      contextMemories = data.memories || [];
+
+      renderKnowledgeGraph(
+        data.entities || [],
+        data.relationships || []
+      );
+    } catch (error) {
+      console.error(error);
+      alert("Could not load knowledge graph");
+    }
+  }
+
+
+  function renderKnowledgeGraph(entities, relationships) {
+    const svg = d3.select("#knowledgeGraph");
+
+    svg.selectAll("*").remove();
+
+    const width = +svg.attr("width");
+    const height = +svg.attr("height");
+
+    if (!entities.length) {
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height / 2)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#888")
+        .text("No entities yet");
+      return;
+    }
+
+    const nodes = entities.map(entity => ({
+      id: entity.id,
+      name: entity.name,
+      type: entity.entity_type
+    }));
+
+    const links = relationships
+      .map(rel => {
+        const sourceName = rel.source?.name;
+        const targetName = rel.target?.name;
+
+        const source = nodes.find(
+          node => node.name === sourceName
+        );
+
+        const target = nodes.find(
+          node => node.name === targetName
+        );
+
+        if (!source || !target) {
+          return null;
+        }
+
+        return {
+          source: source.id,
+          target: target.id,
+          relationship: rel.relationship
+        };
+      })
+      .filter(Boolean);
+
+    const simulation = d3.forceSimulation(nodes)
+      .force(
+        "link",
+        d3.forceLink(links)
+          .id(d => d.id)
+          .distance(140)
+      )
+      .force(
+        "charge",
+        d3.forceManyBody()
+          .strength(-500)
+      )
+      .force(
+        "center",
+        d3.forceCenter(width / 2, height / 2)
+      )
+      .force(
+        "collision",
+        d3.forceCollide(55)
+      );
+
+    const link = svg.append("g")
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke", "#bbb")
+      .attr("stroke-width", 2);
+
+    const linkLabels = svg.append("g")
+      .selectAll("text")
+      .data(links)
+      .join("text")
+      .attr("class", "graph-link-label")
+      .text(d => d.relationship);
+
+    const node = svg.append("g")
+      .selectAll("g")
+      .data(nodes)
+      .join("g")
+      .style("cursor", "pointer")
+      .call(
+        d3.drag()
+          .on("start", dragStarted)
+          .on("drag", dragged)
+          .on("end", dragEnded)
+      );
+
+    node.on("click", function(event, d) {
+      event.stopPropagation();
+
+      showNodeDetails(
+        d,
+        relationships
+      );
+    });
+
+    node.append("circle")
+      .attr("r", 34)
+      .attr("fill", d => {
+        if (d.type === "project") return "#111";
+        if (d.type === "technology") return "#4f46e5";
+        if (d.type === "person") return "#059669";
+        return "#666";
+      });
+
+    node.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", 4)
+      .attr("fill", "white")
+      .attr("class", "graph-label")
+      .text(d => d.name);
+
+    simulation.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
+
+      linkLabels
+        .attr(
+          "x",
+          d => (d.source.x + d.target.x) / 2
+        )
+        .attr(
+          "y",
+          d => (d.source.y + d.target.y) / 2
+        );
+
+      node.attr(
+        "transform",
+        d => `translate(${d.x},${d.y})`
+      );
+    });
+
+    function dragStarted(event, d) {
+      if (!event.active) {
+        simulation.alphaTarget(0.3).restart();
+      }
+
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragEnded(event, d) {
+      if (!event.active) {
+        simulation.alphaTarget(0);
+      }
+
+      d.fx = null;
+      d.fy = null;
+    }
+  }
+
+
+  function showNodeDetails(node, relationships) {
+    const details = document.getElementById("graphDetails");
+
+    const related = relationships.filter(rel => {
+      return (
+        rel.source?.name === node.name ||
+        rel.target?.name === node.name
+      );
+    });
+
+    let relationshipsHtml = "";
+
+    if (related.length === 0) {
+      relationshipsHtml = "<li>No relationships found</li>";
+    } else {
+      relationshipsHtml = related.map(rel => {
+        if (rel.source.name === node.name) {
+          return `
+            <li>
+              ${escapeHtml(node.name)}
+              → ${escapeHtml(rel.relationship)}
+              → ${escapeHtml(rel.target.name)}
+            </li>
+          `;
+        }
+
+        return `
+          <li>
+            ${escapeHtml(rel.source.name)}
+            → ${escapeHtml(rel.relationship)}
+            → ${escapeHtml(node.name)}
+          </li>
+        `;
+      }).join("");
+    }
+
+    const relatedMemories = contextMemories.filter(memory =>
+      memory.content
+        .toLowerCase()
+        .includes(node.name.toLowerCase())
+    );
+
+    let memoriesHtml = "";
+
+    if (relatedMemories.length === 0) {
+      memoriesHtml = "<li>No related memories</li>";
+    } else {
+      memoriesHtml = relatedMemories
+        .map(memory => `
+          <li>
+            ${escapeHtml(memory.content)}
+          </li>
+        `)
+        .join("");
+    }
+
+    details.innerHTML = `
+      <h3>${escapeHtml(node.name)}</h3>
+
+      <p>
+        <strong>Type:</strong>
+        ${escapeHtml(node.type)}
+      </p>
+
+      <br>
+
+      <strong>Relationships</strong>
+
+      <ul>
+        ${relationshipsHtml}
+      </ul>
+
+      <br>
+
+      <strong>Related Memories</strong>
+
+      <ul>
+        ${memoriesHtml}
+      </ul>
+    `;
+  }
+
+
+  graphButton.addEventListener(
+    "click",
+    loadKnowledgeGraph
   );
 
 </script>

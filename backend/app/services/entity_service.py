@@ -90,6 +90,8 @@ def _get_or_create_entity(
     name: str,
     entity_type: str,
     entity_cache: dict,
+    source_type: str = "chat",
+    source_document_id: str | None = None,
 ):
     key = (name.lower().strip(), entity_type.lower().strip())
 
@@ -112,15 +114,19 @@ def _get_or_create_entity(
         entity_cache[key] = entity_id
         return entity_id
 
+    row = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "name": name.strip(),
+        "entity_type": entity_type.strip(),
+        "source_type": source_type,
+        "source_document_id": source_document_id,
+    }
+
     created = (
         supabase
         .table("entities")
-        .insert({
-            "id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "name": name.strip(),
-            "entity_type": entity_type.strip(),
-        })
+        .insert(row)
         .execute()
     )
 
@@ -131,8 +137,11 @@ def _get_or_create_entity(
 
 def save_knowledge(
     supabase,
+    user_id: str,
     knowledge: dict,
-    user_id: str = DEFAULT_USER_ID,
+    source_type: str = "chat",
+    source_document_id: str | None = None,
+    source_page: int | None = None,
 ):
     entities = knowledge.get("entities") or []
     relationships = knowledge.get("relationships") or []
@@ -160,11 +169,12 @@ def save_knowledge(
             name=name,
             entity_type=entity_type,
             entity_cache=entity_cache,
+            source_type=source_type,
+            source_document_id=source_document_id,
         )
         if len(entity_cache) > before:
             entities_saved += 1
 
-    # Ensure relationship endpoints exist even if omitted from entities list
     name_to_type = {
         (e.get("name") or "").lower().strip(): (
             e.get("type") or e.get("entity_type") or "topic"
@@ -183,22 +193,26 @@ def save_knowledge(
         if not source or not target or not relationship:
             continue
 
-        source_type = name_to_type.get(source.lower(), "topic")
-        target_type = name_to_type.get(target.lower(), "topic")
+        source_entity_type = name_to_type.get(source.lower(), "topic")
+        target_entity_type = name_to_type.get(target.lower(), "topic")
 
         source_id = _get_or_create_entity(
             supabase=supabase,
             user_id=user_id,
             name=source,
-            entity_type=source_type,
+            entity_type=source_entity_type,
             entity_cache=entity_cache,
+            source_type=source_type,
+            source_document_id=source_document_id,
         )
         target_id = _get_or_create_entity(
             supabase=supabase,
             user_id=user_id,
             name=target,
-            entity_type=target_type,
+            entity_type=target_entity_type,
             entity_cache=entity_cache,
+            source_type=source_type,
+            source_document_id=source_document_id,
         )
 
         existing_rel = (
@@ -221,6 +235,9 @@ def save_knowledge(
             "source_entity_id": source_id,
             "target_entity_id": target_id,
             "relationship": relationship,
+            "source_type": source_type,
+            "source_document_id": source_document_id,
+            "source_page": source_page,
         }).execute()
 
         relationships_saved += 1

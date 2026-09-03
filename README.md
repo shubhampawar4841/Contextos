@@ -1,33 +1,17 @@
 # ContextOS
 
-Backend API for uploading and parsing PDF documents (early stage).
+Chat with your PDFs using RAG, long-term memory, and a knowledge graph.
 
 ## Stack
 
 - **FastAPI** — API server
-- **PyMuPDF** — extract text from PDF pages
-- **Docling** — parse PDF structure into markdown
-- **Supabase** — store PDFs and document metadata
+- **Docling** — PDF parse + chunking
+- **Gemini** — embeddings (`768` dims)
+- **Groq** — chat / memory / entity extraction
+- **Supabase** — storage, documents, chunks, memories, graph
+- **Vanilla HTML + D3** — frontend UI
 
-## What's built
-
-- `GET /health` — health check
-- `POST /documents/upload` — upload a PDF, extract text, parse with Docling, save to Supabase storage + `documents` table
-
-## Project layout
-
-```
-backend/
-  app/
-    main.py              # FastAPI app
-    api/documents.py     # upload endpoint
-    core/                # config + Supabase client
-    services/
-      pdf_parser.py      # page text extraction
-      document_parser.py # Docling markdown conversion
-```
-
-## Run
+## Run backend
 
 ```bash
 cd backend
@@ -41,4 +25,46 @@ source .venv/Scripts/activate
 python -m uvicorn app.main:app --reload
 ```
 
-API docs: http://127.0.0.1:8000/docs
+API: http://127.0.0.1:8000  
+Docs: http://127.0.0.1:8000/docs
+
+Make sure `backend/.env` has:
+
+```env
+SUPABASE_URL=...
+SUPABASE_SECRET_KEY=...
+GEMINI_API_KEY=...
+GROQ_API_KEY=...
+```
+
+## Run frontend (HTML)
+
+In a **second terminal**:
+
+```bash
+cd frontend
+python -m http.server 5500
+```
+
+Open: http://localhost:5500
+
+Do **not** open `index.html` by double-clicking it — serve it with the command above so it can talk to the API (CORS is set for `http://localhost:5500`).
+
+## What you can do in the UI
+
+- Upload PDFs
+- Chat with RAG + memory + knowledge graph
+- Browse chats / documents
+- Open **Context** and **Knowledge Graph**
+
+## Project layout
+
+```
+backend/
+  app/
+    main.py
+    api/          # documents, chat, sessions, context, search
+    services/     # parsing, chunking, embeddings, memory, entities
+frontend/
+  index.html      # chat UI + context + D3 graph
+```
