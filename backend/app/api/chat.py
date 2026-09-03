@@ -10,13 +10,15 @@ from app.services.memory_service import (
     handle_memory_update,
     is_duplicate_memory,
 )
+from app.services.context_service import build_unified_context
+from app.services.retrieval_service import retrieve_document_chunks
 from app.services.entity_service import (
     DEFAULT_USER_ID,
     extract_entities_and_relationships,
+    find_mentioned_entities,
     get_graph_context_for_entities,
     save_knowledge,
 )
-from app.services.context_service import build_unified_context
 
 
 router = APIRouter(
@@ -149,28 +151,29 @@ def chat_with_documents(body: ChatRequest):
             f"{memory['content']}"
         )
 
-    response = supabase.rpc(
-        "match_document_chunks",
-        {
-            "query_embedding": query_embedding,
-            "match_count": body.limit,
-            "filter_document_id": body.document_id,
-        },
-    ).execute()
-
-    chunks = response.data or []
-    chunks = [
-        chunk
-        for chunk in chunks
-        if float(chunk["similarity"]) >= 0.60
-    ]
-    print(f"7. Relevant document chunks={len(chunks)}")
-
-    query_entity_names = [
+    mentioned_entities = find_mentioned_entities(
+        supabase=supabase,
+        user_id=DEFAULT_USER_ID,
+        text=body.question,
+    )
+    extracted_entity_names = [
         entity["name"]
         for entity in knowledge.get("entities", [])
         if entity.get("name")
     ]
+    query_entity_names = list(dict.fromkeys(
+        [entity["name"] for entity in mentioned_entities]
+        + extracted_entity_names
+    ))
+
+    chunks = retrieve_document_chunks(
+        supabase,
+        query_embedding=query_embedding,
+        keywords=query_entity_names or [body.question[:80]],
+        limit=body.limit,
+        filter_document_id=body.document_id,
+    )
+    print(f"7. Relevant document chunks={len(chunks)}")
 
     graph_rows = get_graph_context_for_entities(
         supabase=supabase,

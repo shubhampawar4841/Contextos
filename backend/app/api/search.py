@@ -1,15 +1,16 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
-
-from app.core.config import settings
-from app.core.supabase import supabase
-from app.services.embedding_service import create_embedding
 from app.services.context_service import build_unified_context
+from app.services.embedding_service import create_embedding
 from app.services.entity_service import (
     DEFAULT_USER_ID,
     extract_entities_and_relationships,
+    find_mentioned_entities,
     get_graph_context_for_entities,
 )
+from app.services.retrieval_service import retrieve_document_chunks
+from app.core.config import settings
+from app.core.supabase import supabase
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 
 router = APIRouter(
@@ -46,29 +47,29 @@ def search_context(body: SearchRequest):
     ]
     print(f"3. Relevant memories={len(memories)}")
 
-    document_response = supabase.rpc(
-        "match_document_chunks",
-        {
-            "query_embedding": query_embedding,
-            "match_count": body.limit,
-            "filter_document_id": None,
-        },
-    ).execute()
-
-    chunks = [
-        chunk
-        for chunk in (document_response.data or [])
-        if float(chunk.get("similarity", 0)) >= 0.60
-    ]
-    print(f"4. Relevant document chunks={len(chunks)}")
-
     knowledge = extract_entities_and_relationships(body.query)
+    mentioned_entities = find_mentioned_entities(
+        supabase=supabase,
+        user_id=DEFAULT_USER_ID,
+        text=body.query,
+    )
+    entity_names = list(dict.fromkeys(
+        [entity["name"] for entity in mentioned_entities]
+        + [
+            entity["name"]
+            for entity in knowledge.get("entities", [])
+            if entity.get("name")
+        ]
+    ))
 
-    entity_names = [
-        entity["name"]
-        for entity in knowledge.get("entities", [])
-        if entity.get("name")
-    ]
+    chunks = retrieve_document_chunks(
+        supabase,
+        query_embedding=query_embedding,
+        keywords=entity_names or [body.query[:80]],
+        limit=body.limit,
+        filter_document_id=None,
+    )
+    print(f"4. Relevant document chunks={len(chunks)}")
 
     graph_rows = get_graph_context_for_entities(
         supabase=supabase,
@@ -91,5 +92,11 @@ def search_context(body: SearchRequest):
         "memories": memories,
         "documents": chunks,
         "relationships": graph_rows,
-        "entities": knowledge.get("entities", []),
+        "entities": knowledge.get("entities", []) or [
+            {
+                "name": entity["name"],
+                "type": entity.get("entity_type"),
+            }
+            for entity in mentioned_entities
+        ],
     }

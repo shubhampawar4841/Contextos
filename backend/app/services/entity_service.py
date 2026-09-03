@@ -433,6 +433,49 @@ def save_knowledge(
     }
 
 
+def find_mentioned_entities(
+    supabase,
+    user_id: str,
+    text: str,
+    limit: int = 25,
+) -> list[dict]:
+    """Match stored entity names that appear in free text (for retrieval)."""
+    query_text = (text or "").lower()
+    if not query_text.strip():
+        return []
+
+    response = (
+        supabase
+        .table("entities")
+        .select("id, name, entity_type, source_document_id")
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    matches = []
+    seen_names: set[str] = set()
+
+    for entity in response.data or []:
+        name = (entity.get("name") or "").strip()
+        name_key = name.lower()
+
+        # Skip tiny / noisy tokens that substring-match almost any question.
+        if len(name) < 4:
+            continue
+        if " " not in name and len(name) < 12:
+            continue
+        if name_key in seen_names:
+            continue
+        if name_key not in query_text:
+            continue
+
+        seen_names.add(name_key)
+        matches.append(entity)
+
+    matches.sort(key=lambda row: len(row.get("name") or ""), reverse=True)
+    return matches[:limit]
+
+
 def get_user_graph_context(
     supabase,
     user_id: str = DEFAULT_USER_ID,
