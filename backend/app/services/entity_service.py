@@ -453,3 +453,91 @@ def get_user_graph_context(
     )
 
     return response.data or []
+
+
+def get_graph_context_for_entities(
+    supabase,
+    user_id: str,
+    entity_names: list[str],
+) -> list[dict]:
+    if not entity_names:
+        return []
+
+    entities_response = (
+        supabase
+        .table("entities")
+        .select("id, name, entity_type")
+        .eq("user_id", user_id)
+        .in_("name", entity_names)
+        .execute()
+    )
+
+    entities = entities_response.data or []
+
+    if not entities:
+        return []
+
+    entity_ids = [
+        entity["id"]
+        for entity in entities
+    ]
+
+    source_response = (
+        supabase
+        .table("entity_relationships")
+        .select(
+            """
+            id,
+            relationship,
+            source_page,
+            source:entities!entity_relationships_source_entity_id_fkey(
+                name,
+                entity_type
+            ),
+            target:entities!entity_relationships_target_entity_id_fkey(
+                name,
+                entity_type
+            )
+            """
+        )
+        .eq("user_id", user_id)
+        .in_("source_entity_id", entity_ids)
+        .limit(25)
+        .execute()
+    )
+
+    target_response = (
+        supabase
+        .table("entity_relationships")
+        .select(
+            """
+            id,
+            relationship,
+            source_page,
+            source:entities!entity_relationships_source_entity_id_fkey(
+                name,
+                entity_type
+            ),
+            target:entities!entity_relationships_target_entity_id_fkey(
+                name,
+                entity_type
+            )
+            """
+        )
+        .eq("user_id", user_id)
+        .in_("target_entity_id", entity_ids)
+        .limit(25)
+        .execute()
+    )
+
+    relationships = (
+        (source_response.data or [])
+        + (target_response.data or [])
+    )
+
+    unique = {}
+
+    for row in relationships:
+        unique[row["id"]] = row
+
+    return list(unique.values())

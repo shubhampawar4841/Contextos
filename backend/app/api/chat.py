@@ -11,7 +11,7 @@ from app.services.memory_service import (
 from app.services.entity_service import (
     DEFAULT_USER_ID,
     extract_entities_and_relationships,
-    get_user_graph_context,
+    get_graph_context_for_entities,
     save_knowledge,
 )
 
@@ -184,9 +184,16 @@ def chat_with_documents(body: ChatRequest):
         ]
     )
 
-    graph_rows = get_user_graph_context(
+    query_entity_names = [
+        entity["name"]
+        for entity in knowledge.get("entities", [])
+        if entity.get("name")
+    ]
+
+    graph_rows = get_graph_context_for_entities(
         supabase=supabase,
         user_id=DEFAULT_USER_ID,
+        entity_names=query_entity_names,
     )
 
     graph_text = "\n".join(
@@ -196,7 +203,8 @@ def chat_with_documents(body: ChatRequest):
         for row in graph_rows
         if row.get("source") and row.get("target")
     )
-    print(f"Graph relationships={len(graph_rows)}")
+    print(f"Query graph entities={query_entity_names}")
+    print(f"Relevant graph relationships={len(graph_rows)}")
 
     prompt = f"""
 You are answering the user using:
