@@ -72,3 +72,52 @@ def get_context():
             status_code=500,
             detail=f"Could not load context: {str(e)}",
         )
+
+
+@router.get("/document/{document_id}/graph")
+def get_document_graph(document_id: str):
+    try:
+        entities_response = (
+            supabase
+            .table("entities")
+            .select(
+                "id, name, entity_type, source_type, source_document_id"
+            )
+            .eq("source_document_id", document_id)
+            .execute()
+        )
+
+        relationships_response = (
+            supabase
+            .table("entity_relationships")
+            .select(
+                """
+                id,
+                relationship,
+                source_page,
+                source:entities!entity_relationships_source_entity_id_fkey(name, entity_type),
+                target:entities!entity_relationships_target_entity_id_fkey(name, entity_type)
+                """
+            )
+            .eq("source_document_id", document_id)
+            .execute()
+        )
+
+        entities = entities_response.data or []
+        relationships = relationships_response.data or []
+
+        return {
+            "document_id": document_id,
+            "entity_count": len(entities),
+            "relationship_count": len(relationships),
+            "entities": entities,
+            "relationships": relationships,
+        }
+
+    except Exception as e:
+        print(f"DOCUMENT GRAPH LOAD FAILED: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
