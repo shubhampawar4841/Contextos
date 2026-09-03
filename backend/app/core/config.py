@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     SUPABASE_SECRET_KEY: str
     GEMINI_API_KEY: str
     GROQ_API_KEY: str
+    MEMORY_SIMILARITY_THRESHOLD: float = 0.60
 
     model_config = SettingsConfigDict(
         env_file=".env",

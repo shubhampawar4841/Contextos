@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.core.supabase import supabase
 from app.services.embedding_service import create_embedding
 from app.services.llm_service import generate_text
@@ -148,6 +149,12 @@ def chat_with_documents(body: ChatRequest):
     ).execute()
 
     stored_memories = memory_response.data or []
+    stored_memories = [
+        memory
+        for memory in stored_memories
+        if float(memory.get("similarity", 0))
+        >= settings.MEMORY_SIMILARITY_THRESHOLD
+    ]
     memory_text = "\n".join(
         f"- {memory['content']}"
         for memory in stored_memories
