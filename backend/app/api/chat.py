@@ -16,6 +16,7 @@ from app.services.entity_service import (
     get_graph_context_for_entities,
     save_knowledge,
 )
+from app.services.context_service import build_unified_context
 
 
 router = APIRouter(
@@ -140,10 +141,6 @@ def chat_with_documents(body: ChatRequest):
         if float(memory.get("similarity", 0))
         >= settings.MEMORY_SIMILARITY_THRESHOLD
     ]
-    memory_text = "\n".join(
-        f"- {memory['content']}"
-        for memory in stored_memories
-    )
     print(f"6. Relevant memories={len(stored_memories)}")
     for memory in stored_memories:
         print(
@@ -169,13 +166,6 @@ def chat_with_documents(body: ChatRequest):
     ]
     print(f"7. Relevant document chunks={len(chunks)}")
 
-    context = "\n\n".join(
-        [
-            f"[Chunk {chunk['chunk_index']}]\n{chunk['content']}"
-            for chunk in chunks
-        ]
-    )
-
     query_entity_names = [
         entity["name"]
         for entity in knowledge.get("entities", [])
@@ -187,51 +177,40 @@ def chat_with_documents(body: ChatRequest):
         user_id=DEFAULT_USER_ID,
         entity_names=query_entity_names,
     )
-
-    graph_text = "\n".join(
-        f"- {row['source']['name']} "
-        f"{row['relationship']} "
-        f"{row['target']['name']}"
-        for row in graph_rows
-        if row.get("source") and row.get("target")
-    )
     print(f"Query graph entities={query_entity_names}")
     print(f"Relevant graph relationships={len(graph_rows)}")
 
+    unified_context = build_unified_context(
+        memories=stored_memories,
+        document_chunks=chunks,
+        graph_rows=graph_rows,
+    )
+
+    print(
+        f"Unified context: "
+        f"{len(stored_memories)} memories, "
+        f"{len(chunks)} chunks, "
+        f"{len(graph_rows)} graph relationships"
+    )
+
     prompt = f"""
-You are answering the user using:
-1. relevant uploaded-document context
-2. conversation history
-3. long-term memories about the user
-4. known entity relationships from the knowledge graph
+Use the stored context below when it is relevant.
 
-Long-term memories:
-{memory_text}
-
-Known relationships about the user and their context:
-{graph_text}
+{unified_context}
 
 Conversation history:
 {history_text}
 
-Document context:
-{context}
-
-Current question:
+USER QUESTION:
 {body.question}
 
 Instructions:
-- Use memories to personalize how you answer.
-- Use graph relationships when they are relevant.
-- Do not invent relationships that are not present.
-- Use document context only when relevant chunks are provided.
-- Use document context as the source of truth for document-related facts.
-- If the user prefers a certain response style, follow it.
-- If the user is simply sharing information, respond naturally using memory/graph context.
-- If the answer is not supported by the documents when documents are required, say:
-  "I don't have enough information in the uploaded documents."
-
-Do not mention chunk numbers.
+- Use only the stored context that is relevant.
+- Do not invent facts, relationships, or document details.
+- Prefer document context for document questions.
+- Prefer memories for personal facts/preferences.
+- Prefer known relationships for entity questions.
+- If the user is sharing information, respond naturally.
 Answer clearly.
 """
 
