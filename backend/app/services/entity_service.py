@@ -1,87 +1,272 @@
 import json
 import uuid
 
-from app.services.llm_service import generate_text
+from groq import Groq
+
+from app.core.config import settings
 
 
 # Temporary single-user MVP until auth exists
 DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001"
 
+client = Groq(api_key=settings.GROQ_API_KEY)
 
-def extract_entities_and_relationships(text: str):
-    prompt = f"""
-Extract important entities and relationships from the message.
+EXTRACTION_MODEL = "openai/gpt-oss-20b"
+CHUNK_CHAR_LIMIT = 3000
 
-Entity types can include:
-- person
-- project
-- company
-- technology
-- product
-- location
-- topic
+KNOWLEDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "name",
+                    "type"
+                ],
+                "additionalProperties": False
+            }
+        },
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string"
+                    },
+                    "relationship": {
+                        "type": "string"
+                    },
+                    "target": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "source",
+                    "relationship",
+                    "target"
+                ],
+                "additionalProperties": False
+            }
+        }
+    },
+    "required": [
+        "entities",
+        "relationships"
+    ],
+    "additionalProperties": False
+}
 
-Only extract useful, meaningful knowledge.
-Do not extract random words.
 
-Return ONLY valid JSON.
-
-Format:
-
-{{
-  "entities": [
-    {{
-      "name": "ContextOS",
-      "type": "project"
-    }}
-  ],
-  "relationships": [
-    {{
-      "source": "ContextOS",
-      "relationship": "uses",
-      "target": "Supabase"
-    }}
-  ]
-}}
-
-Message:
-{text}
-"""
-
+def extract_single_chunk(text: str):
     try:
-        raw = generate_text(prompt)
-        raw = (
-            raw
-            .replace("```json", "")
-            .replace("```", "")
-            .strip()
+        response = client.chat.completions.create(
+            model=EXTRACTION_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+You extract important entities and relationships from text.
+
+Only extract meaningful knowledge.
+
+Useful entity types include:
+person
+company
+project
+technology
+product
+institution
+location
+topic
+organization
+
+Relationships should be short and normalized.
+
+Examples:
+works_at
+built
+uses
+wrote
+founded
+studied_at
+created
+invested_in
+related_to
+
+Do not invent facts.
+"""
+                },
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "knowledge_extraction",
+                    "strict": True,
+                    "schema": KNOWLEDGE_SCHEMA
+                }
+            },
+            reasoning_effort="low",
         )
+
+        raw = response.choices[0].message.content
+
+        if not raw:
+            return {
+                "entities": [],
+                "relationships": []
+            }
+
         data = json.loads(raw)
+
+        if not isinstance(data, dict):
+            return {
+                "entities": [],
+                "relationships": []
+            }
+
+        entities = data.get("entities") or []
+        relationships = data.get("relationships") or []
+
+        if not isinstance(entities, list):
+            entities = []
+        if not isinstance(relationships, list):
+            relationships = []
+
+        return {
+            "entities": entities,
+            "relationships": relationships,
+        }
+
     except Exception as e:
-        print(f"Entity extraction skipped: {e}")
+        print(f"Groq entity extraction failed: {e}")
+
         return {
             "entities": [],
-            "relationships": [],
+            "relationships": []
         }
 
-    if not isinstance(data, dict):
-        return {
-            "entities": [],
-            "relationships": [],
-        }
 
-    entities = data.get("entities") or []
-    relationships = data.get("relationships") or []
+def _split_text(text: str, limit: int = CHUNK_CHAR_LIMIT) -> list[str]:
+    text = (text or "").strip()
 
-    if not isinstance(entities, list):
-        entities = []
-    if not isinstance(relationships, list):
-        relationships = []
+    if not text:
+        return []
+
+    if len(text) <= limit:
+        return [text]
+
+    parts = []
+    start = 0
+
+    while start < len(text):
+        end = min(start + limit, len(text))
+
+        if end < len(text):
+            split_at = text.rfind("\n", start, end)
+            if split_at <= start:
+                split_at = text.rfind(". ", start, end)
+            if split_at > start:
+                end = split_at + 1
+
+        part = text[start:end].strip()
+        if part:
+            parts.append(part)
+
+        start = end
+
+    return parts
+
+
+def _dedupe_knowledge(entities: list, relationships: list) -> dict:
+    unique_entities = []
+    seen_entities = set()
+
+    for entity in entities:
+        name = (entity.get("name") or "").strip()
+        entity_type = (
+            entity.get("type")
+            or entity.get("entity_type")
+            or ""
+        ).strip()
+
+        if not name or not entity_type:
+            continue
+
+        key = (name.lower(), entity_type.lower())
+        if key in seen_entities:
+            continue
+
+        seen_entities.add(key)
+        unique_entities.append({
+            "name": name,
+            "type": entity_type,
+        })
+
+    unique_relationships = []
+    seen_relationships = set()
+
+    for rel in relationships:
+        source = (rel.get("source") or "").strip()
+        target = (rel.get("target") or "").strip()
+        relationship = (rel.get("relationship") or "").strip()
+
+        if not source or not target or not relationship:
+            continue
+
+        key = (
+            source.lower(),
+            relationship.lower(),
+            target.lower(),
+        )
+        if key in seen_relationships:
+            continue
+
+        seen_relationships.add(key)
+        unique_relationships.append({
+            "source": source,
+            "relationship": relationship,
+            "target": target,
+        })
 
     return {
-        "entities": entities,
-        "relationships": relationships,
+        "entities": unique_entities,
+        "relationships": unique_relationships,
     }
+
+
+def extract_entities_and_relationships(text: str):
+    parts = _split_text(text)
+
+    if not parts:
+        return {
+            "entities": [],
+            "relationships": [],
+        }
+
+    all_entities = []
+    all_relationships = []
+
+    for part in parts:
+        result = extract_single_chunk(part)
+        all_entities.extend(result.get("entities") or [])
+        all_relationships.extend(result.get("relationships") or [])
+
+    return _dedupe_knowledge(all_entities, all_relationships)
 
 
 def _get_or_create_entity(
