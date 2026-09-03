@@ -1,9 +1,20 @@
 import httpx
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 
-mcp = FastMCP("ContextOS")
+# Use 8001 so it doesn't collide with FastAPI on 8000.
+# Disable Host/Origin DNS-rebinding checks for local ngrok/Claude testing.
+# Re-enable with an explicit allowed_hosts list before production.
+mcp = FastMCP(
+    "ContextOS",
+    host="127.0.0.1",
+    port=8001,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
+)
 
 CONTEXTOS_API = "http://127.0.0.1:8000"
 
@@ -30,4 +41,4 @@ async def search_context(query: str, limit: int = 5) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http")

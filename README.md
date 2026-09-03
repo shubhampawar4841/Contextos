@@ -52,12 +52,30 @@ Do **not** open `index.html` by double-clicking it — serve it with the command
 
 ## Run MCP server
 
-Keep the FastAPI backend running, then in another terminal:
+Keep the FastAPI backend running on `:8000`, then in another terminal:
 
 ```bash
 cd backend
 source .venv/Scripts/activate   # Windows Git Bash
-mcp dev mcp_server.py
+python mcp_server.py
+```
+
+MCP Streamable HTTP listens on:
+
+```text
+http://127.0.0.1:8001/mcp
+```
+
+Expose it with ngrok for Claude:
+
+```bash
+ngrok http 8001
+```
+
+Then use:
+
+```text
+https://xxxxx.ngrok-free.app/mcp
 ```
 
 This exposes one tool: `search_context` → `POST /search`.
