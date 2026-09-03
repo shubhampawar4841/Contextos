@@ -7,6 +7,7 @@ from app.services.embedding_service import create_embedding
 from app.services.llm_service import generate_text
 from app.services.memory_service import (
     extract_memories,
+    handle_memory_update,
     is_duplicate_memory,
 )
 from app.services.entity_service import (
@@ -69,11 +70,15 @@ def chat_with_documents(body: ChatRequest):
 
     existing_response = (
         supabase.table("memories")
-        .select("content, memory_type")
+        .select("content, memory_type, status")
         .eq("session_id", session_id)
         .execute()
     )
-    existing_memories = existing_response.data or []
+    existing_memories = [
+        memory
+        for memory in (existing_response.data or [])
+        if memory.get("status", "active") == "active"
+    ]
 
     saved_memories = []
     for memory in memories:
@@ -86,36 +91,16 @@ def chat_with_documents(body: ChatRequest):
 
         memory_embedding = create_embedding(memory["content"])
 
-        similar = supabase.rpc(
-            "match_memories",
-            {
-                "query_embedding": memory_embedding,
-                "match_count": 3,
-            },
-        ).execute()
-
-        matches = similar.data or []
-        is_semantic_duplicate = any(
-            float(match["similarity"]) >= 0.90
-            for match in matches
+        saved = handle_memory_update(
+            supabase=supabase,
+            new_memory=memory,
+            embedding=memory_embedding,
+            session_id=session_id,
         )
 
-        if is_semantic_duplicate:
-            print(
-                f"Skipping semantic duplicate: "
-                f"{memory['content']}"
-            )
-            continue
-
-        supabase.table("memories").insert({
-            "session_id": session_id,
-            "memory_type": memory["memory_type"],
-            "content": memory["content"],
-            "embedding": memory_embedding,
-        }).execute()
-
-        existing_memories.append(memory)
-        saved_memories.append(memory)
+        if saved:
+            existing_memories.append(memory)
+            saved_memories.append(memory)
 
     print(f"3. Extracted {len(memories)} memories, saved {len(saved_memories)}")
     for memory in saved_memories:
