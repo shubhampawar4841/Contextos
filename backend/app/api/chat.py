@@ -213,8 +213,13 @@ Instructions:
 - Prefer document context for document questions.
 - Prefer memories for personal facts/preferences.
 - Prefer known relationships for entity questions.
+- Write like a concise briefing, not a dump of raw notes.
+- Start with a short title or 1-2 sentence answer.
+- Then 3-7 key bullets. Do not list every graph edge.
+- Mention source provenance inline when possible (document title and page).
+- Use Markdown headings, bullets, and bold. Avoid tables unless comparing 2+ items.
+- Do not paste giant relationship tables into the answer.
 - If the user is sharing information, respond naturally.
-Answer clearly.
 """
 
     print("8. Generating answer with Groq")
