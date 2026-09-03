@@ -243,6 +243,40 @@ Answer clearly.
         for chunk in chunks
     ]
 
+    entities_used = []
+    seen_entity_names: set[str] = set()
+
+    for entity in mentioned_entities:
+        name = (entity.get("name") or "").strip()
+        if not name or name.lower() in seen_entity_names:
+            continue
+        seen_entity_names.add(name.lower())
+        entities_used.append({
+            "name": name,
+            "type": entity.get("entity_type") or "topic",
+        })
+
+    for entity in knowledge.get("entities", []):
+        name = (entity.get("name") or "").strip()
+        if not name or name.lower() in seen_entity_names:
+            continue
+        seen_entity_names.add(name.lower())
+        entities_used.append({
+            "name": name,
+            "type": entity.get("type") or entity.get("entity_type") or "topic",
+        })
+
+    graph_relationships = [
+        {
+            "source": row["source"]["name"],
+            "relationship": row["relationship"],
+            "target": row["target"]["name"],
+            "page": row.get("source_page"),
+        }
+        for row in graph_rows
+        if row.get("source") and row.get("target")
+    ]
+
     print("9. CHAT COMPLETE")
     return {
         "session_id": session_id,
@@ -251,7 +285,11 @@ Answer clearly.
         "memories_extracted": memories,
         "memories_saved": saved_memories,
         "memories_used": stored_memories,
-        "knowledge": knowledge,
-        "graph_relationships": len(graph_rows),
+        "knowledge": {
+            "entities": entities_used,
+            "relationships": knowledge.get("relationships") or [],
+        },
+        "entities": entities_used,
+        "graph_relationships": graph_relationships,
         "sources": sources,
     }
