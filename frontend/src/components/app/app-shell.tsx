@@ -15,6 +15,7 @@ import {
   PanelLeft,
   Boxes,
   Loader2,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,13 +24,17 @@ import { CommandPalette, useCommandPalette } from "./command-palette";
 import { useUploadDocument, useHealth } from "@/lib/hooks";
 import { toast } from "sonner";
 
-const nav = [
+const primaryNav = [
   { to: "/", label: "Overview", icon: LayoutGrid },
   { to: "/chat", label: "Chat", icon: MessagesSquare },
   { to: "/memories", label: "Memories", icon: Brain },
   { to: "/documents", label: "Documents", icon: FileText },
   { to: "/graph", label: "Knowledge Graph", icon: Network },
   { to: "/my-context", label: "My Context", icon: UserSquare2 },
+] as const;
+
+const systemNav = [
+  { to: "/evaluation", label: "Evaluation", icon: FlaskConical },
   { to: "/connections", label: "Connections", icon: Plug },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -60,6 +65,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const renderNavItem = (item: (typeof primaryNav)[number] | (typeof systemNav)[number]) => {
+    const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+    const link = (
+      <Link
+        key={item.to}
+        to={item.to}
+        className={cn(
+          "flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors duration-150",
+          active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+        )}
+      >
+        <item.icon className="size-[15px] shrink-0" />
+        {!collapsed && <span className="truncate">{item.label}</span>}
+      </Link>
+    );
+    return collapsed ? (
+      <Tooltip key={item.to}>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{item.label}</TooltipContent>
+      </Tooltip>
+    ) : (
+      link
+    );
+  };
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="flex min-h-screen bg-background">
@@ -80,33 +112,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <nav className="flex-1 space-y-0.5 px-2 py-2">
-            {nav.map((item) => {
-              const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
-              const link = (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors duration-150",
-                    active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                  )}
-                >
-                  <item.icon className="size-[15px] shrink-0" />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </Link>
-              );
-              return collapsed ? (
-                <Tooltip key={item.to}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                </Tooltip>
-              ) : (
-                link
-              );
-            })}
+          <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+            {primaryNav.map(renderNavItem)}
+            <div className={cn("px-2 pb-1 pt-4", collapsed && "pt-3")}>
+              {!collapsed && (
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  System
+                </p>
+              )}
+              {collapsed && <div className="mx-auto mb-1 h-px w-4 bg-border" />}
+            </div>
+            {systemNav.map(renderNavItem)}
           </nav>
 
           <div className="border-t p-2">

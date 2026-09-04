@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as DocumentsRouteImport } from './routes/documents'
+import { Route as EvaluationRouteImport } from './routes/evaluation'
 import { Route as GraphRouteImport } from './routes/graph'
 import { Route as MemoriesRouteImport } from './routes/memories'
 import { Route as MyContextRouteImport } from './routes/my-context'
@@ -37,6 +38,11 @@ const ConnectionsRoute = ConnectionsRouteImport.update({
 const DocumentsRoute = DocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluationRoute = EvaluationRouteImport.update({
+  id: '/evaluation',
+  path: '/evaluation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GraphRoute = GraphRouteImport.update({
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof ChatRoute
   '/connections': typeof ConnectionsRoute
   '/documents': typeof DocumentsRouteWithChildren
+  '/evaluation': typeof EvaluationRoute
   '/graph': typeof GraphRoute
   '/memories': typeof MemoriesRoute
   '/my-context': typeof MyContextRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/chat': typeof ChatRoute
   '/connections': typeof ConnectionsRoute
   '/documents': typeof DocumentsRouteWithChildren
+  '/evaluation': typeof EvaluationRoute
   '/graph': typeof GraphRoute
   '/memories': typeof MemoriesRoute
   '/my-context': typeof MyContextRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/chat': typeof ChatRoute
   '/connections': typeof ConnectionsRoute
   '/documents': typeof DocumentsRouteWithChildren
+  '/evaluation': typeof EvaluationRoute
   '/graph': typeof GraphRoute
   '/memories': typeof MemoriesRoute
   '/my-context': typeof MyContextRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/connections'
     | '/documents'
+    | '/evaluation'
     | '/graph'
     | '/memories'
     | '/my-context'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/connections'
     | '/documents'
+    | '/evaluation'
     | '/graph'
     | '/memories'
     | '/my-context'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/connections'
     | '/documents'
+    | '/evaluation'
     | '/graph'
     | '/memories'
     | '/my-context'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   ChatRoute: typeof ChatRoute
   ConnectionsRoute: typeof ConnectionsRoute
   DocumentsRoute: typeof DocumentsRouteWithChildren
+  EvaluationRoute: typeof EvaluationRoute
   GraphRoute: typeof GraphRoute
   MemoriesRoute: typeof MemoriesRoute
   MyContextRoute: typeof MyContextRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/documents'
       fullPath: '/documents'
       preLoaderRoute: typeof DocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluation': {
+      id: '/evaluation'
+      path: '/evaluation'
+      fullPath: '/evaluation'
+      preLoaderRoute: typeof EvaluationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/graph': {
@@ -231,6 +251,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRoute,
   ConnectionsRoute: ConnectionsRoute,
   DocumentsRoute: DocumentsRouteWithChildren,
+  EvaluationRoute: EvaluationRoute,
   GraphRoute: GraphRoute,
   MemoriesRoute: MemoriesRoute,
   MyContextRoute: MyContextRoute,

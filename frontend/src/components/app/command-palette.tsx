@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   Plug,
   MessagesSquare,
+  FlaskConical,
 } from "lucide-react";
 import { useContextBundle, useDocuments } from "@/lib/hooks";
 import { documentTitle } from "@/lib/mappers";
@@ -105,6 +106,9 @@ export function CommandPalette({
           </CommandItem>
           <CommandItem onSelect={() => go("/chat")}>
             <MessagesSquare className="size-4" /> Chat
+          </CommandItem>
+          <CommandItem onSelect={() => go("/evaluation")}>
+            <FlaskConical className="size-4" /> Evaluation
           </CommandItem>
           <CommandItem onSelect={() => go("/connections")}>
             <Plug className="size-4" /> Connections
