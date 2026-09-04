@@ -11,6 +11,7 @@ from app.services.retrieval_service import (
     CHUNK_SIMILARITY_THRESHOLD,
     retrieve_hybrid_chunks,
 )
+from app.services.reranker_service import rerank_chunks
 
 
 DATASET_PATH = Path(__file__).parent / "dataset.json"
@@ -61,6 +62,28 @@ def retrieve_hybrid_eval_chunks(
         query_embedding=query_embedding,
         limit=limit,
         filter_document_id=document_id,
+    )
+
+
+def retrieve_hybrid_reranked_eval_chunks(
+    question: str,
+    limit: int = 10,
+    document_id: str | None = None,
+) -> list[dict]:
+    query_embedding = create_embedding(question)
+
+    hybrid_chunks = retrieve_hybrid_chunks(
+        supabase,
+        query=question,
+        query_embedding=query_embedding,
+        limit=20,
+        filter_document_id=document_id,
+    )
+
+    return rerank_chunks(
+        question,
+        hybrid_chunks,
+        limit=limit,
     )
 
 
@@ -184,6 +207,12 @@ def main():
         dataset,
     )
 
+    reranked_results = evaluate(
+        "HYBRID + RERANKER",
+        retrieve_hybrid_reranked_eval_chunks,
+        dataset,
+    )
+
     print("\nCOMPARISON")
     print("==========")
 
@@ -212,6 +241,15 @@ def main():
         f"{hybrid_results['recall@10']:>8.4f}"
         f"{hybrid_results['mrr']:>8.4f}"
         f"{hybrid_results['avg_latency_ms']:>10.1f}ms"
+    )
+
+    print(
+        f"{'Hybrid + Reranker':<26}"
+        f"{reranked_results['recall@1']:>8.4f}"
+        f"{reranked_results['recall@5']:>8.4f}"
+        f"{reranked_results['recall@10']:>8.4f}"
+        f"{reranked_results['mrr']:>8.4f}"
+        f"{reranked_results['avg_latency_ms']:>10.1f}ms"
     )
 
 
