@@ -156,3 +156,76 @@ def retrieve_bm25_chunks(
 
     return chunks
 
+
+def reciprocal_rank_fusion(
+    vector_chunks: list[dict],
+    lexical_chunks: list[dict],
+    *,
+    k: int = 60,
+) -> list[dict]:
+    """Fuse ranked lists without mixing incompatible score scales."""
+    scores: dict[str, float] = {}
+    chunks_by_id: dict[str, dict] = {}
+
+    for rank, chunk in enumerate(vector_chunks, start=1):
+        chunk_id = str(chunk["id"])
+        chunks_by_id[chunk_id] = dict(chunk)
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1 / (k + rank)
+
+    for rank, chunk in enumerate(lexical_chunks, start=1):
+        chunk_id = str(chunk["id"])
+
+        if chunk_id not in chunks_by_id:
+            chunks_by_id[chunk_id] = dict(chunk)
+
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1 / (k + rank)
+
+    results = []
+
+    for chunk_id, score in scores.items():
+        chunk = chunks_by_id[chunk_id]
+        chunk["fusion_score"] = score
+        chunk["match_type"] = "hybrid"
+        results.append(chunk)
+
+    return sorted(
+        results,
+        key=lambda row: row["fusion_score"],
+        reverse=True,
+    )
+
+
+def retrieve_hybrid_chunks(
+    supabase,
+    *,
+    query: str,
+    query_embedding: list[float],
+    limit: int = 5,
+    filter_document_id: str | None = None,
+) -> list[dict]:
+    """Vector + BM25 fused with RRF. Does not replace chat retrieval yet."""
+    vector_response = supabase.rpc(
+        "match_document_chunks",
+        {
+            "query_embedding": query_embedding,
+            "match_count": 20,
+            "filter_document_id": filter_document_id,
+        },
+    ).execute()
+
+    vector_chunks = vector_response.data or []
+
+    lexical_chunks = retrieve_bm25_chunks(
+        supabase,
+        query=query,
+        limit=20,
+        filter_document_id=filter_document_id,
+    )
+
+    fused = reciprocal_rank_fusion(
+        vector_chunks,
+        lexical_chunks,
+    )
+
+    return fused[:limit]
+
