@@ -129,3 +129,30 @@ def retrieve_document_chunks(
 
     merged = merge_chunks_by_id(vector_chunks + keyword_chunks)
     return merged[:limit]
+
+
+def retrieve_bm25_chunks(
+    supabase,
+    *,
+    query: str,
+    limit: int = 10,
+    filter_document_id: str | None = None,
+) -> list[dict]:
+    """PostgreSQL full-text (ts_rank) lexical retrieval — separate from ILIKE."""
+    response = supabase.rpc(
+        "search_document_chunks_fts",
+        {
+            "search_query": query,
+            "match_count": limit,
+            "filter_document_id": filter_document_id,
+        },
+    ).execute()
+
+    chunks = []
+    for row in response.data or []:
+        chunk = dict(row)
+        chunk["match_type"] = "bm25"
+        chunks.append(chunk)
+
+    return chunks
+
