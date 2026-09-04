@@ -19,7 +19,10 @@ def get_context():
         memories_response = (
             supabase
             .table("memories")
-            .select("id, memory_type, content, created_at, session_id")
+            .select(
+                "id, memory_type, content, created_at, session_id, "
+                "status, superseded_by"
+            )
             .order("created_at", desc=True)
             .limit(50)
             .execute()

@@ -27,6 +27,7 @@ export type ApiMemory = {
   created_at?: string | null;
   session_id?: string | null;
   status?: string | null;
+  superseded_by?: string | null;
   similarity?: number | null;
 };
 
