@@ -3,13 +3,22 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from collections.abc import Callable
 
 from app.core.supabase import supabase
 from app.services.embedding_service import create_embedding
-from app.services.retrieval_service import CHUNK_SIMILARITY_THRESHOLD
+from app.services.retrieval_service import (
+    CHUNK_SIMILARITY_THRESHOLD,
+    retrieve_hybrid_chunks,
+)
 
 
 DATASET_PATH = Path(__file__).parent / "dataset.json"
+
+
+def load_dataset() -> list[dict]:
+    with open(DATASET_PATH, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
 def retrieve_vector_chunks(
@@ -39,9 +48,20 @@ def retrieve_vector_chunks(
     return chunks
 
 
-def load_dataset() -> list[dict]:
-    with open(DATASET_PATH, "r", encoding="utf-8") as file:
-        return json.load(file)
+def retrieve_hybrid_eval_chunks(
+    question: str,
+    limit: int = 10,
+    document_id: str | None = None,
+) -> list[dict]:
+    query_embedding = create_embedding(question)
+
+    return retrieve_hybrid_chunks(
+        supabase,
+        query=question,
+        query_embedding=query_embedding,
+        limit=limit,
+        filter_document_id=document_id,
+    )
 
 
 def chunk_matches_expected(chunk: dict, item: dict) -> bool:
@@ -52,12 +72,7 @@ def chunk_matches_expected(chunk: dict, item: dict) -> bool:
         for term in item.get("expected_terms", [])
     ]
 
-    term_match = all(
-        term in content
-        for term in expected_terms
-    )
-
-    if not term_match:
+    if not all(term in content for term in expected_terms):
         return False
 
     expected_pages = item.get("expected_pages")
@@ -88,92 +103,116 @@ def find_first_relevant_rank(
     return None
 
 
-def main():
-    dataset = load_dataset()
-
-    recall_at_1_hits = 0
-    recall_at_5_hits = 0
-    recall_at_10_hits = 0
-
+def evaluate(
+    name: str,
+    retriever: Callable[[str, int, str | None], list[dict]],
+    dataset: list[dict],
+) -> dict:
+    recall_1_hits = 0
+    recall_5_hits = 0
+    recall_10_hits = 0
     reciprocal_rank_sum = 0.0
     total_latency_ms = 0.0
+
+    print(f"\n{name}")
+    print("-" * len(name))
+
+    for item in dataset:
+        start = time.perf_counter()
+
+        chunks = retriever(
+            item["question"],
+            10,
+            None,
+        )
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        total_latency_ms += latency_ms
+
+        rank = find_first_relevant_rank(chunks, item)
+
+        if rank is not None:
+            if rank <= 1:
+                recall_1_hits += 1
+
+            if rank <= 5:
+                recall_5_hits += 1
+
+            if rank <= 10:
+                recall_10_hits += 1
+
+            reciprocal_rank_sum += 1 / rank
+
+        print(
+            f"[{item['id']}] "
+            f"rank={rank if rank is not None else 'MISS'} "
+            f"latency={latency_ms:.1f}ms"
+        )
+
+    total = len(dataset)
+
+    results = {
+        "recall@1": recall_1_hits / total,
+        "recall@5": recall_5_hits / total,
+        "recall@10": recall_10_hits / total,
+        "mrr": reciprocal_rank_sum / total,
+        "avg_latency_ms": total_latency_ms / total,
+    }
+
+    return results
+
+
+def main():
+    dataset = load_dataset()
 
     print("\nContextOS Retrieval Evaluation")
     print("==============================")
     print(f"Queries: {len(dataset)}")
-    print("\nVECTOR BASELINE\n")
 
-    for item in dataset:
-        question = item["question"]
+    print("\nWarming embedding model...")
+    create_embedding("warmup query")
 
-        start = time.perf_counter()
+    vector_results = evaluate(
+        "VECTOR BASELINE",
+        retrieve_vector_chunks,
+        dataset,
+    )
 
-        chunks = retrieve_vector_chunks(
-            question=question,
-            limit=10,
-        )
+    hybrid_results = evaluate(
+        "HYBRID VECTOR + LEXICAL",
+        retrieve_hybrid_eval_chunks,
+        dataset,
+    )
 
-        latency_ms = (
-            time.perf_counter() - start
-        ) * 1000
+    print("\nCOMPARISON")
+    print("==========")
 
-        total_latency_ms += latency_ms
+    print(
+        f"{'Strategy':<26}"
+        f"{'R@1':>8}"
+        f"{'R@5':>8}"
+        f"{'R@10':>8}"
+        f"{'MRR':>8}"
+        f"{'Latency':>12}"
+    )
 
-        rank = find_first_relevant_rank(
-            chunks,
-            item,
-        )
+    print(
+        f"{'Vector':<26}"
+        f"{vector_results['recall@1']:>8.4f}"
+        f"{vector_results['recall@5']:>8.4f}"
+        f"{vector_results['recall@10']:>8.4f}"
+        f"{vector_results['mrr']:>8.4f}"
+        f"{vector_results['avg_latency_ms']:>10.1f}ms"
+    )
 
-        if rank is None:
-            print("\n  TOP RETRIEVED CHUNKS:")
-
-            for i, chunk in enumerate(chunks, start=1):
-                content = (chunk.get("content") or "").replace("\n", " ")
-
-                print(
-                    f"  {i}. "
-                    f"sim={float(chunk.get('similarity', 0)):.4f} "
-                    f"doc={chunk.get('document_title')} "
-                    f"page={chunk.get('page_start')}"
-                )
-                print(f"     {content[:220]}")
-
-        if rank is not None:
-            if rank <= 1:
-                recall_at_1_hits += 1
-
-            if rank <= 5:
-                recall_at_5_hits += 1
-
-            if rank <= 10:
-                recall_at_10_hits += 1
-
-            reciprocal_rank_sum += 1 / rank
-
-        rank_display = rank if rank is not None else "MISS"
-
-        print(
-            f"[{item['id']}] "
-            f"rank={rank_display} "
-            f"latency={latency_ms:.1f}ms"
-        )
-        print(f"  {question}")
-
-    total = len(dataset)
-
-    recall_at_1 = recall_at_1_hits / total
-    recall_at_5 = recall_at_5_hits / total
-    recall_at_10 = recall_at_10_hits / total
-    mrr = reciprocal_rank_sum / total
-    avg_latency = total_latency_ms / total
-
-    print("\nRESULTS")
-    print("-------")
-    print(f"Recall@1:  {recall_at_1:.4f}")
-    print(f"Recall@5:  {recall_at_5:.4f}")
-    print(f"Recall@10: {recall_at_10:.4f}")
-    print(f"MRR:       {mrr:.4f}")
-    print(f"Avg latency: {avg_latency:.2f} ms")
+    print(
+        f"{'Vector + Lexical RRF':<26}"
+        f"{hybrid_results['recall@1']:>8.4f}"
+        f"{hybrid_results['recall@5']:>8.4f}"
+        f"{hybrid_results['recall@10']:>8.4f}"
+        f"{hybrid_results['mrr']:>8.4f}"
+        f"{hybrid_results['avg_latency_ms']:>10.1f}ms"
+    )
 
 
 if __name__ == "__main__":
