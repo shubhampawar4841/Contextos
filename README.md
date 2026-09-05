@@ -50,6 +50,7 @@ source .venv/Scripts/activate
 # macOS / Linux
 # source .venv/bin/activate
 
+# Full local stack (PDF upload + Docling + chat) — default
 python -m uvicorn app.main:app --reload
 ```
 
@@ -61,13 +62,68 @@ API: http://127.0.0.1:8000 · Docs: http://127.0.0.1:8000/docs
 SUPABASE_URL=...
 SUPABASE_SECRET_KEY=...
 GROQ_API_KEY=...
+APP_MODE=full
 # GEMINI_API_KEY optional — embeddings are local MPNet now
 ```
+
+### App modes
+
+| Mode | Env | PDF ingest | Docling / OCR / PyMuPDF | Chat / search |
+| --- | --- | --- | --- | --- |
+| **full** (local) | `APP_MODE=full` | yes | loaded when upload runs | yes |
+| **retrieval** (Render) | `APP_MODE=retrieval` | no (503) | never imported | yes |
+
+Local install (everything):
+
+```bash
+pip install -r requirements.txt
+```
+
+Render / API-only install:
+
+```bash
+pip install -r requirements-api.txt
+```
+
+**Embeddings:** Query vectors still use local `all-mpnet-base-v2` so they match Supabase chunks. That means **torch + sentence-transformers stay in `requirements-api.txt`**. Do not swap embedding models without re-embedding all chunks. Cross-encoder reranker is **not** on the Render path (eval/local only).
 
 Useful Supabase SQL (run once in SQL Editor):
 
 - `backend/app/evals/search_document_chunks_fts.sql` — FTS / BM25-style RPC
 - `backend/app/evals/add_contextual_content_column.sql` — optional `contextual_content` column
+
+## Deploy on Render (retrieval API)
+
+Free tier is tight (512 MB). Use retrieval mode so Docling/OCR never load.
+
+**Build Command**
+
+```bash
+pip install -r requirements-api.txt
+```
+
+**Start Command**
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+**Environment variables**
+
+```env
+APP_MODE=retrieval
+SUPABASE_URL=...
+SUPABASE_SECRET_KEY=...
+GROQ_API_KEY=...
+MEMORY_SIMILARITY_THRESHOLD=0.60
+CORS_ORIGINS=https://your-frontend.example.com
+```
+
+Root directory: `backend`
+
+**Unavailable on Render:** PDF upload / Docling / OCR / re-indexing. Ingest locally with `APP_MODE=full`, then point the frontend at the Render API for chat.
+
+**Memory caveat:** First chat request loads MPNet (~torch). On 512 MB this can still OOM; if it does, move query embeddings to a small always-on worker later — do **not** change the model without re-embedding.
 
 ## Run frontend
 
@@ -132,13 +188,18 @@ Expose with `ngrok http 8001` for Claude. Tool: `search_context` → `POST /sear
 
 ```text
 backend/
+  requirements.txt      # full local (Docling + torch + …)
+  requirements-api.txt  # Render retrieval-only
   app/
-    api/           # documents, chat, sessions, context, search
-    services/      # Docling, chunking, embeddings, hybrid retrieval,
-                   # reranker, memory, entities, contextual chunks
-    evals/         # dataset.json, retrieval_eval.py, SQL helpers
+    main.py             # APP_MODE gates ingest router
+    api/
+      documents.py         # list/delete (light)
+      documents_ingest.py  # PDF upload (full mode only)
+      chat.py / search.py / …
+    services/      # Docling, chunking, embeddings, retrieval, …
+    evals/
   mcp_server.py
-frontend/          # TanStack Start app (Chat, Graph, Memories, Evaluation, …)
+frontend/
 ```
 
 ## Design notes (product)

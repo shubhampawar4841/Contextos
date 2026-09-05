@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from sentence_transformers import SentenceTransformer
-
 EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 EMBED_BATCH_SIZE = 16
 EMBED_DIM = 768
 
-_model: SentenceTransformer | None = None
+_model = None
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model():
+    """Lazy-load MPNet so torch is not imported until first embed."""
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
+
         print(f"Loading local embedding model: {EMBED_MODEL_NAME}")
         _model = SentenceTransformer(EMBED_MODEL_NAME)
         print("Local embedding model ready")
@@ -19,7 +20,7 @@ def _get_model() -> SentenceTransformer:
 
 
 def create_embeddings(texts: list[str]) -> list[list[float]]:
-    """Embed texts locally with MPNet (768-d, no API quota)."""
+    """Embed texts locally with MPNet (768-d). Must match stored vectors."""
     if not texts:
         return []
 

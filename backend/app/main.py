@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import settings
 from app.api.documents import router as documents_router
 from app.api.search import router as search_router
 from app.api.chat import router as chat_router
@@ -15,16 +16,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=settings.cors_origin_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +26,9 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {
-        "status": "ok"
+        "status": "ok",
+        "app_mode": settings.APP_MODE,
+        "ingestion_enabled": settings.is_full_mode,
     }
 
 
@@ -43,3 +37,23 @@ app.include_router(search_router)
 app.include_router(chat_router)
 app.include_router(sessions_router)
 app.include_router(context_router)
+
+if settings.is_full_mode:
+    # Heavy: Docling / PyMuPDF / OCR / chunking — local only
+    from app.api.documents_ingest import router as documents_ingest_router
+
+    app.include_router(documents_ingest_router)
+    print(f"APP_MODE={settings.APP_MODE}: PDF ingestion ENABLED")
+else:
+    @app.post("/documents/upload")
+    async def upload_document_disabled(file: UploadFile = File(...)):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Document ingestion is disabled on this deployment "
+                "(APP_MODE=retrieval). Upload PDFs on a local backend "
+                "with APP_MODE=full."
+            ),
+        )
+
+    print(f"APP_MODE={settings.APP_MODE}: PDF ingestion DISABLED")

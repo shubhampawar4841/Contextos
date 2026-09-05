@@ -1,3 +1,8 @@
+# ContextOS — FULL / LOCAL dependencies (ingestion + chat + eval)
+# Includes Docling, OCR, PyMuPDF, torch, sentence-transformers, etc.
+#
+# For Render retrieval-only deploys use: requirements-api.txt
+#
 accelerate==1.14.0
 alembic==1.19.1
 annotated-doc==0.0.5
